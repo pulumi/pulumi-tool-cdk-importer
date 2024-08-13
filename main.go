@@ -2,33 +2,31 @@ package main
 
 import (
 	"context"
-	//"flag"
-	"fmt"
+	"flag"
 	"log"
 )
 
 func main() {
+	ctx := context.Background()
 	// var bucketIdRef = flag.String("bucket", "", "CDK logical ID for Bucket to import")
 	// flag.Parse()
+	var stackRef = flag.String("stack", "", "CloudFormation stack name")
+	flag.Parse()
+	if stackRef == nil || *stackRef == "" {
+		log.Fatalf("stack is required")
+	}
+	stackName := StackName(*stackRef)
 
-	ctx := context.Background()
-	if err := runPulumiUpWithProxies(ctx, "."); err != nil {
+	cc, err := newCcapi(ctx)
+	if err != nil {
 		log.Fatal(err)
 	}
-}
 
-func debugDiscoverCDKLogicalResourceID(bucketId CDKLogicalResourceID) {
-	// bucketId := CDKLogicalResourceID(*bucketIdRef)
-	ctx := context.Background()
-	c, err := NewCloudControlClient(ctx)
-	if err != nil {
-		panic(err)
+	if err := cc.getStackResources(ctx, stackName); err != nil {
+		log.Fatal(err)
 	}
-	results, err := DiscoverByCDKLogicalResourceID(ctx, c, "AWS::S3::Bucket", bucketId)
-	if err != nil {
-		panic(err)
-	}
-	for _, r := range results {
-		fmt.Println(r)
+
+	if err := runPulumiUpWithProxies(ctx, cc, "."); err != nil {
+		log.Fatal(err)
 	}
 }

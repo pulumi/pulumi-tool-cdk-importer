@@ -6,6 +6,7 @@ import (
 
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	pulumirpc "github.com/pulumi/pulumi/sdk/v3/proto/go"
 )
 
@@ -14,8 +15,8 @@ const (
 	awsNativeVersion = "0.116.0"
 )
 
-func runPulumiUpWithProxies(ctx context.Context, workDir string) error {
-	envVars, err := startProxiedProviders(ctx)
+func runPulumiUpWithProxies(ctx context.Context, c *ccapi, workDir string) error {
+	envVars, err := startProxiedProviders(ctx, c)
 	if err != nil {
 		return err
 	}
@@ -38,9 +39,9 @@ func runPulumiUpWithProxies(ctx context.Context, workDir string) error {
 	return nil
 }
 
-func startProxiedProviders(ctx context.Context) (map[string]string, error) {
+func startProxiedProviders(ctx context.Context, c *ccapi) (map[string]string, error) {
 	f1 := providers.DownloadPluginBinaryFactory(awsNative, awsNativeVersion)
-	f2 := providers.ProviderInterceptFactory(ctx, f1, awsNativeInterceptors())
+	f2 := providers.ProviderInterceptFactory(ctx, f1, awsNativeInterceptors(c))
 	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
 		"aws-native": f2,
 	})
@@ -52,14 +53,44 @@ func startProxiedProviders(ctx context.Context) (map[string]string, error) {
 	}, nil
 }
 
-func awsNativeInterceptors() providers.ProviderInterceptors {
+func awsNativeInterceptors(c *ccapi) providers.ProviderInterceptors {
+	i := &awsNativeInterceptor{c}
 	return providers.ProviderInterceptors{
-		Create: func(
-			ctx context.Context,
-			in *pulumirpc.CreateRequest,
-			client pulumirpc.ResourceProviderClient,
-		) (*pulumirpc.CreateResponse, error) {
-			return nil, fmt.Errorf("INTERCEPTED CREATE")
-		},
+		Create: i.create,
 	}
+}
+
+type awsNativeInterceptor struct {
+	c *ccapi
+}
+
+func (i *awsNativeInterceptor) create(
+	ctx context.Context,
+	in *pulumirpc.CreateRequest,
+	client pulumirpc.ResourceProviderClient,
+) (*pulumirpc.CreateResponse, error) {
+	c := i.c
+	urn, err := resource.ParseURN(in.GetUrn())
+	if err != nil {
+		return nil, err
+	}
+	logical, err := c.findLogicalResourceID(ctx, urn)
+	if err != nil {
+		return nil, err
+	}
+	prim, err := c.findPrimaryResourceID(ctx, urn.Type(), logical)
+	if err != nil {
+		return nil, err
+	}
+	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
+		Id:  string(prim),
+		Urn: string(urn),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Import failed: %w", err)
+	}
+	return &pulumirpc.CreateResponse{
+		Id:         rresp.Id,
+		Properties: rresp.Properties,
+	}, nil
 }
