@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -21,6 +22,22 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("import called")
+		file, _ := cmd.Flags().GetString("file")
+		if file == "" {
+			panic("--file must be provided")
+		}
+		outFile, _ := cmd.Flags().GetString("out")
+		if info, err := os.Stat(outFile); err != nil && info == nil {
+			os.Remove(outFile)
+		}
+
+		ccapi, err := newCcapi(cmd.Context())
+		if err != nil {
+			panic(err)
+		}
+		if err := ccapi.generateImportFile(cmd.Context(), file, outFile); err != nil {
+			panic(err)
+		}
 	},
 }
 
@@ -36,4 +53,6 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// importCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	importCmd.Flags().StringP("file", "f", "", "Location of the cdk import file")
+	importCmd.Flags().StringP("out", "o", "pulumi-import.json", "File location to write the output to")
 }

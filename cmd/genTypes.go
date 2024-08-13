@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -59,7 +61,7 @@ to quickly create a Cobra application.`,
 			}
 		}
 
-		contents, err := json.Marshal(mapping)
+		contents, err := json.MarshalIndent(mapping, "", "\t")
 		if err != nil {
 			panic(err)
 		}
@@ -83,4 +85,59 @@ func init() {
 	// genTypesCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	genTypesCmd.Flags().StringP("folder", "f", "", "Location to the cloudformation resource schemas")
 	genTypesCmd.Flags().StringP("out", "o", "cfn-schema.json", "File location to write the output to")
+}
+
+type identifierType string
+
+const (
+	identifierType_INPUT  identifierType = "INPUT"
+	identifierType_OUTPUT identifierType = "OUTPUT"
+)
+
+type IdentifierInfo struct {
+	Name           string         `json:"name"`
+	IdentifierType identifierType `json:"identifierType"`
+}
+
+type schemaInfo []IdentifierInfo
+
+func processSchemaJson(schema map[string]interface{}) (string, schemaInfo, error) {
+	typeName := schema["typeName"].(string)
+	var createOnlyProperties []interface{}
+	var readOnlyProperties []interface{}
+	primaryIds, ok := schema["primaryIdentifier"].([]interface{})
+	if !ok {
+		fmt.Println(schema)
+		return "", nil, fmt.Errorf("%s: primaryIdentifier doesn't exist", typeName)
+	}
+	cp, ok := schema["createOnlyProperties"]
+	if ok {
+		createOnlyProperties = cp.([]interface{})
+	}
+	rp, ok := schema["readOnlyProperties"]
+	if ok {
+		readOnlyProperties = rp.([]interface{})
+
+	}
+
+	infos := schemaInfo{}
+	var idType identifierType
+	for _, name := range primaryIds {
+		stringName := name.(string)
+		if slices.Contains(createOnlyProperties, name) {
+			idType = identifierType_INPUT
+		} else if slices.Contains(readOnlyProperties, name) {
+			idType = identifierType_OUTPUT
+		} else {
+			// otherwise it's both so treat it as an input
+			idType = identifierType_INPUT
+		}
+		nameParts := strings.Split(stringName, "/")[2]
+		infos = append(infos, IdentifierInfo{
+			Name:           nameParts,
+			IdentifierType: idType,
+		})
+	}
+	return typeName, infos, nil
+
 }
