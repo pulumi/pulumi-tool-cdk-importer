@@ -6,8 +6,11 @@ import (
 
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/plugin"
 	pulumirpc "github.com/pulumi/pulumi/sdk/v3/proto/go"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -32,7 +35,7 @@ func runPulumiUpWithProxies(ctx context.Context, c *ccapi, workDir string) error
 	if err != nil {
 		return err
 	}
-	_, err = s.Up(ctx)
+	_, err = s.Up(ctx, optup.ContinueOnError())
 	if err != nil {
 		return err
 	}
@@ -74,11 +77,29 @@ func (i *awsNativeInterceptor) create(
 	if err != nil {
 		return nil, err
 	}
+	label := fmt.Sprintf("%s.Create(%s)", "aws-native-proxy", urn)
+	resourceToken := string(urn.Type())
+
+	inputs, err := plugin.UnmarshalProperties(in.GetProperties(), plugin.MarshalOptions{
+		Label:        fmt.Sprintf("%s.properties", label),
+		KeepUnknowns: true,
+		RejectAssets: true,
+		KeepSecrets:  true,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "malformed resource inputs")
+	}
+
+	props, err := awsNativeMetadata.CfnProperties(resourceToken, inputs)
+	if err != nil {
+		return nil, err
+	}
+
 	logical, err := c.findLogicalResourceID(ctx, urn)
 	if err != nil {
 		return nil, err
 	}
-	prim, err := c.findPrimaryResourceID(ctx, urn.Type(), logical)
+	prim, err := c.findPrimaryResourceID(ctx, urn.Type(), logical, props)
 	if err != nil {
 		return nil, err
 	}

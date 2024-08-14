@@ -3,8 +3,11 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 
 	"github.com/pulumi/pulumi-aws-native/provider/pkg/metadata"
+	"github.com/pulumi/pulumi-aws-native/provider/pkg/naming"
+	"github.com/pulumi/pulumi-go-provider/resourcex"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 )
@@ -48,6 +51,30 @@ func (src *awsNativeMetadataSource) PrimaryIdentifier(resourceToken tokens.Type)
 		props = append(props, prop)
 	}
 	return props, true
+}
+
+func (src *awsNativeMetadataSource) Resource(resourceToken string) (metadata.CloudAPIResource, error) {
+	r, ok := src.cloudApiMetadata.Resources[resourceToken]
+	if !ok {
+		return metadata.CloudAPIResource{}, fmt.Errorf("Could not find resource: %s", resourceToken)
+	}
+	return r, nil
+}
+
+func (src *awsNativeMetadataSource) CfnProperties(resourceToken string, inputs resource.PropertyMap) (map[string]any, error) {
+	inputsMap := resourcex.Decode(inputs)
+	spec, err := src.Resource(resourceToken)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert SDK inputs to CFN payload.
+	payload, err := naming.SdkToCfn(&spec, src.cloudApiMetadata.Types, inputsMap)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to convert value for %s: %w", resourceToken, err)
+	}
+	return payload, nil
+
 }
 
 //go:embed pulumi-aws-native-metadata.json

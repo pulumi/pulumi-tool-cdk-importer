@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/pulumi/pulumi-aws-native/provider/pkg/naming"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 )
@@ -85,6 +86,7 @@ func (c *ccapi) findPrimaryResourceID(
 	ctx context.Context,
 	resourceToken tokens.Type,
 	logicalID LogicalResourceID,
+	props map[string]any,
 ) (PrimaryResourceID, error) {
 	resourceType, ok := awsNativeMetadata.ResourceType(resourceToken)
 	if !ok {
@@ -100,8 +102,27 @@ func (c *ccapi) findPrimaryResourceID(
 	case 1:
 		return c.findOwnId(ctx, resourceType, logicalID, idParts[0])
 	default:
-		return c.findCompositeId(ctx, resourceType, logicalID, nil)
+		resourceModel, err := renderResourceModel(idParts, props)
+		if err != nil {
+			return "", err
+		}
+		return c.findCompositeId(ctx, resourceType, logicalID, resourceModel)
 	}
+}
+
+func renderResourceModel(idParts []resource.PropertyKey, props map[string]any) (map[string]string, error) {
+	model := map[string]string{}
+	for _, part := range idParts {
+		cfnName := naming.ToCfnName(string(part), nil)
+		if prop, ok := props[cfnName]; ok {
+			if val, ok := prop.(string); ok {
+				model[cfnName] = val
+			} else {
+				return nil, fmt.Errorf("id property %s is not a string", prop)
+			}
+		}
+	}
+	return model, nil
 }
 
 func (c *ccapi) findCompositeId(
@@ -201,10 +222,11 @@ func (c *ccapi) findResourceIdentifierBySuffix(
 		var uae *types.UnsupportedActionException
 		if errors.As(err, &uae) {
 			// TODO debug logging of some form
-			fmt.Printf("ResourceType %q not yet supported by cloudcontrol, manual mapping required",
-				resourceType)
+			fmt.Printf("ResourceType %q not yet supported by cloudcontrol, manual mapping required: %s",
+				resourceType, err.Error())
+			return "<PLACEHOLDER>", nil
 		}
-		return "<PLACEHOLDER>", nil
+		return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v", resourceType, resourceModel)
 	}
 
 	for _, resource := range resources {
