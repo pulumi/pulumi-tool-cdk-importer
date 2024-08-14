@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
@@ -15,11 +16,13 @@ import (
 
 const (
 	awsNative        = "aws-native"
+	aws              = "aws"
+	awsVersion       = "6.49.0"
 	awsNativeVersion = "0.116.0"
 )
 
-func runPulumiUpWithProxies(ctx context.Context, c *ccapi, workDir string) error {
-	envVars, err := startProxiedProviders(ctx, c)
+func runPulumiUpWithProxies(ctx context.Context, c *ccapi, workDir string, classicBin AwsClassicBinLocation) error {
+	envVars, err := startProxiedProviders(ctx, c, classicBin)
 	if err != nil {
 		return err
 	}
@@ -42,11 +45,14 @@ func runPulumiUpWithProxies(ctx context.Context, c *ccapi, workDir string) error
 	return nil
 }
 
-func startProxiedProviders(ctx context.Context, c *ccapi) (map[string]string, error) {
-	f1 := providers.DownloadPluginBinaryFactory(awsNative, awsNativeVersion)
-	f2 := providers.ProviderInterceptFactory(ctx, f1, awsNativeInterceptors(c))
+func startProxiedProviders(ctx context.Context, c *ccapi, classicBin AwsClassicBinLocation) (map[string]string, error) {
+	native1 := providers.DownloadPluginBinaryFactory(awsNative, awsNativeVersion)
+	native2 := providers.ProviderInterceptFactory(ctx, native1, awsNativeInterceptors(c))
+	classic1 := providers.LocalBinary(aws, string(classicBin))
+	classic2 := providers.ProviderInterceptFactory(ctx, classic1, awsClassicInterceptors(c))
 	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
-		"aws-native": f2,
+		"aws-native": native2,
+		"aws":        classic2,
 	})
 	if err != nil {
 		return nil, err
@@ -56,11 +62,33 @@ func startProxiedProviders(ctx context.Context, c *ccapi) (map[string]string, er
 	}, nil
 }
 
+func awsClassicInterceptors(c *ccapi) providers.ProviderInterceptors {
+	i := &awsClassicInterceptor{c}
+	return providers.ProviderInterceptors{
+		Create: i.create,
+	}
+}
+
 func awsNativeInterceptors(c *ccapi) providers.ProviderInterceptors {
 	i := &awsNativeInterceptor{c}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}
+}
+
+type awsClassicInterceptor struct {
+	c *ccapi
+}
+
+func (i *awsClassicInterceptor) create(
+	ctx context.Context,
+	in *pulumirpc.CreateRequest,
+	client pulumirpc.ResourceProviderClient,
+) (*pulumirpc.CreateResponse, error) {
+	return &pulumirpc.CreateResponse{
+		Id:         "",
+		Properties: &structpb.Struct{},
+	}, nil
 }
 
 type awsNativeInterceptor struct {
