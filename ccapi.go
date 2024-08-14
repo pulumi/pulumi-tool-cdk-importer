@@ -16,7 +16,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 )
 
-type StackName string         // CloudFormation stack name, ex. t0yv0-cdk-test-app-dev
+type StackName string // CloudFormation stack name, ex. t0yv0-cdk-test-app-dev
+type AwsClassicBinLocation string
 type ResourceType string      // ex. AWS::S3::Bucket
 type PrimaryResourceID string // ex. "${DatabaseName}|${TableName}"
 type LogicalResourceID string // ex. t0yv0Bucket1EAC1B2B
@@ -56,9 +57,10 @@ type ccapi struct {
 func (c *ccapi) findLogicalResourceID(
 	ctx context.Context,
 	urn resource.URN,
+	metadata MetadataSource,
 ) (LogicalResourceID, error) {
 	resourceToken := urn.Type()
-	resourceType, ok := awsNativeMetadata.ResourceType(resourceToken)
+	resourceType, ok := metadata.ResourceType(resourceToken)
 	if !ok {
 		return "", fmt.Errorf("Unknown resource type: %v", resourceToken)
 	}
@@ -82,38 +84,78 @@ func (c *ccapi) findLogicalResourceID(
 	return match.LogicalID, nil
 }
 
-func (c *ccapi) findPrimaryResourceID(
+func getIdentifiers(
+	ctx context.Context,
+	metadata MetadataSource,
+	resourceToken tokens.Type,
+) (ResourceType, []resource.PropertyKey, error) {
+	resourceType, ok := metadata.ResourceType(resourceToken)
+	if !ok {
+		return "", nil, fmt.Errorf("Unknown resource type: %v", resourceToken)
+	}
+	idParts, ok := metadata.PrimaryIdentifier(resourceToken)
+	if !ok {
+		return "", nil, fmt.Errorf("Unknown primary ID: %v", resourceToken)
+	}
+	return resourceType, idParts, nil
+}
+
+func (c *ccapi) findClassicPrimaryResourceID(
 	ctx context.Context,
 	resourceToken tokens.Type,
 	logicalID LogicalResourceID,
 	props map[string]any,
 ) (PrimaryResourceID, error) {
-	resourceType, ok := awsNativeMetadata.ResourceType(resourceToken)
-	if !ok {
-		return "", fmt.Errorf("Unknown resource type: %v", resourceToken)
-	}
-	idParts, ok := awsNativeMetadata.PrimaryIdentifier(resourceToken)
-	if !ok {
-		return "", fmt.Errorf("Unknown primary ID: %v", resourceToken)
+	resourceType, idParts, err := getIdentifiers(ctx, awsClassicMetadata, resourceToken)
+	if err != nil {
+		return "", err
 	}
 	switch len(idParts) {
 	case 0:
 		return "", fmt.Errorf("Cannot have 0 ID parts")
 	case 1:
-		return c.findOwnId(ctx, resourceType, logicalID, idParts[0])
+		return c.findOwnClassicId(ctx, resourceType, logicalID, idParts[0])
 	default:
-		resourceModel, err := renderResourceModel(idParts, props)
+		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
+			return s
+		})
 		if err != nil {
 			return "", err
 		}
-		return c.findCompositeId(ctx, resourceType, logicalID, resourceModel)
+		return c.findClassicCompositeId(ctx, resourceType, logicalID, resourceModel)
 	}
 }
 
-func renderResourceModel(idParts []resource.PropertyKey, props map[string]any) (map[string]string, error) {
+func (c *ccapi) findNativePrimaryResourceID(
+	ctx context.Context,
+	resourceToken tokens.Type,
+	logicalID LogicalResourceID,
+	props map[string]any,
+) (PrimaryResourceID, error) {
+	resourceType, idParts, err := getIdentifiers(ctx, awsNativeMetadata, resourceToken)
+	if err != nil {
+		return "", err
+	}
+	switch len(idParts) {
+	case 0:
+		return "", fmt.Errorf("Cannot have 0 ID parts")
+	case 1:
+		return c.findOwnNativeId(ctx, resourceType, logicalID, idParts[0])
+	default:
+		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
+			return naming.ToCfnName(string(s), nil)
+		})
+		if err != nil {
+			return "", err
+		}
+		return c.findNativeCompositeId(ctx, resourceType, logicalID, resourceModel)
+	}
+}
+
+func renderResourceModel(idParts []resource.PropertyKey, props map[string]any, resourceKey func(string) string) (map[string]string, error) {
 	model := map[string]string{}
 	for _, part := range idParts {
-		cfnName := naming.ToCfnName(string(part), nil)
+		cfnName := resourceKey(string(part))
 		if prop, ok := props[cfnName]; ok {
 			if val, ok := prop.(string); ok {
 				model[cfnName] = val
@@ -125,7 +167,7 @@ func renderResourceModel(idParts []resource.PropertyKey, props map[string]any) (
 	return model, nil
 }
 
-func (c *ccapi) findCompositeId(
+func (c *ccapi) findNativeCompositeId(
 	ctx context.Context,
 	resourceType ResourceType,
 	logicalID LogicalResourceID,
@@ -142,8 +184,50 @@ func (c *ccapi) findCompositeId(
 	return "", fmt.Errorf("Couldn't find id")
 }
 
+func (c *ccapi) findClassicCompositeId(
+	ctx context.Context,
+	resourceType ResourceType,
+	logicalID LogicalResourceID,
+	resourceModel map[string]string,
+) (PrimaryResourceID, error) {
+	if r, ok := c.cfnStackResources[logicalID]; ok {
+		suffix := string(r.PhysicalID)
+		return PrimaryResourceID(renderClassicId(suffix, resourceModel)), nil
+	}
+	return "", fmt.Errorf("Couldn't find id")
+}
+
+func renderClassicId(id string, resourceModel map[string]string) string {
+	prefix := ""
+	for _, value := range resourceModel {
+		prefix = fmt.Sprintf("%s%s/", prefix, value)
+	}
+	return fmt.Sprintf("%s%s", prefix, id)
+}
+
 // findOwnId should only be used when the resource only has a single element in it's identifier
-func (c *ccapi) findOwnId(
+func (c *ccapi) findOwnClassicId(
+	ctx context.Context,
+	resourceType ResourceType,
+	logicalID LogicalResourceID,
+	primaryID resource.PropertyKey,
+) (PrimaryResourceID, error) {
+	idPropertyName := strings.ToLower(string(primaryID))
+	if strings.HasSuffix(idPropertyName, "name") || strings.HasSuffix(idPropertyName, "id") {
+		if r, ok := c.cfnStackResources[logicalID]; ok {
+			// NOTE! Assuming that PrimaryResourceID matches the PhysicalID.
+			return PrimaryResourceID(r.PhysicalID), nil
+		}
+		return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
+	} else if strings.HasSuffix(idPropertyName, "arn") {
+		return "", fmt.Errorf("Finding resource ids by Arn is not yet supported")
+	} else {
+		return "", fmt.Errorf("Expected suffix of 'Id', 'Name', or 'Arn'; got %s", idPropertyName)
+	}
+}
+
+// findOwnId should only be used when the resource only has a single element in it's identifier
+func (c *ccapi) findOwnNativeId(
 	ctx context.Context,
 	resourceType ResourceType,
 	logicalID LogicalResourceID,
@@ -221,7 +305,7 @@ func (c *ccapi) findResourceIdentifierBySuffix(
 	if err != nil {
 		var uae *types.UnsupportedActionException
 		if errors.As(err, &uae) {
-			// TODO debug logging of some form
+			// TODO: debug logging of some form
 			fmt.Printf("ResourceType %q not yet supported by cloudcontrol, manual mapping required: %s",
 				resourceType, err.Error())
 			return "<PLACEHOLDER>", nil

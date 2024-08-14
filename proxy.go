@@ -11,7 +11,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/plugin"
 	pulumirpc "github.com/pulumi/pulumi/sdk/v3/proto/go"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -85,9 +84,46 @@ func (i *awsClassicInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
+	c := i.c
+	urn, err := resource.ParseURN(in.GetUrn())
+	if err != nil {
+		return nil, err
+	}
+	resourceType := string(urn.Type())
+	// bucket objects are a special case. CDK doesn't have a resource for them, they are handled
+	// by cdk assets which is a cli tool. pulumi-cdk converts them into BucketObjectV2 so go ahead
+	// and just create the object
+	if resourceType == "aws:s3/bucketObjectv2:BucketObjectv2" {
+		return client.Create(ctx, in)
+	}
+	label := fmt.Sprintf("%s.Create(%s)", "aws-proxy", urn)
+	inputs, err := plugin.UnmarshalProperties(in.GetProperties(), plugin.MarshalOptions{
+		Label:        fmt.Sprintf("%s.properties", label),
+		KeepUnknowns: true,
+		RejectAssets: true,
+		KeepSecrets:  true,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "malformed resource inputs")
+	}
+	logical, err := c.findLogicalResourceID(ctx, urn, awsClassicMetadata)
+	if err != nil {
+		return nil, err
+	}
+	prim, err := c.findClassicPrimaryResourceID(ctx, urn.Type(), logical, inputs.Mappable())
+	if err != nil {
+		return nil, err
+	}
+	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
+		Id:  string(prim),
+		Urn: string(urn),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Import failed: %w", err)
+	}
 	return &pulumirpc.CreateResponse{
-		Id:         "",
-		Properties: &structpb.Struct{},
+		Id:         rresp.Id,
+		Properties: rresp.Properties,
 	}, nil
 }
 
@@ -123,11 +159,11 @@ func (i *awsNativeInterceptor) create(
 		return nil, err
 	}
 
-	logical, err := c.findLogicalResourceID(ctx, urn)
+	logical, err := c.findLogicalResourceID(ctx, urn, awsNativeMetadata)
 	if err != nil {
 		return nil, err
 	}
-	prim, err := c.findPrimaryResourceID(ctx, urn.Type(), logical, props)
+	prim, err := c.findNativePrimaryResourceID(ctx, urn.Type(), logical, props)
 	if err != nil {
 		return nil, err
 	}
