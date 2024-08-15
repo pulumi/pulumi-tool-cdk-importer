@@ -69,22 +69,8 @@ func init() {
 						"id",
 					},
 				},
-				"aws:apigatewayv2/route:Route": {
-					CfType: "AWS::ApiGatewayV2::Route",
-					PrimaryIdentifier: []string{
-						"apiId",
-						"id",
-					},
-				},
 				"aws:apigatewayv2/integration:Integration": {
 					CfType: "AWS::ApiGatewayV2::Integration",
-					PrimaryIdentifier: []string{
-						"apiId",
-						"id",
-					},
-				},
-				"aws:apigatewayv2/deployment:Deployment": {
-					CfType: "AWS::ApiGatewayV2::Deployment",
 					PrimaryIdentifier: []string{
 						"apiId",
 						"id",
