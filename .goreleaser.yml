@@ -1,0 +1,26 @@
+dist: goreleaser
+project_name: pulumi-tool-cdk-importer
+version: latest
+snapshot:
+  name_template: "{{ .Version }}-SNAPSHOT"
+checksum:
+  name_template: "{{ .ProjectName }}-{{ .Version }}-checksums.txt"
+archives:
+- id: archive
+  name_template: '{{ .Binary }}-{{ .Tag }}-{{ .Os }}-{{ .Arch }}'
+builds:
+- id: pulumi-tool-cdk-importer
+  binary: pulumi-tool-cdk-importer
+  goarch:
+  - amd64
+  - arm64
+  goos:
+  - darwin
+  - windows
+  - linux
+  ldflags:
+  - -s
+  - -w
+  # - -X github.com/pulumi/pulumi-tool-cdk-importer/pkg/version.Version={{.Tag}}
+  # main: ./cmd/pulumi-tool-cdk-importer/
+  main: .
