@@ -2,7 +2,7 @@ dist: goreleaser
 project_name: pulumi-tool-cdk-importer
 version: 2
 snapshot:
-  name_template: "{{ .Version }}-SNAPSHOT"
+  version_template: "{{ .Version }}-SNAPSHOT"
 checksum:
   name_template: "{{ .ProjectName }}-{{ .Version }}-checksums.txt"
 archives:
