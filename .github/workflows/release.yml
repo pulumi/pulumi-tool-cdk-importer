@@ -23,6 +23,6 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean -p 10 -f .goreleaser.yml --skip=validate --timeout 60m0s --release-notes
+          args: release --clean -p 10 -f .goreleaser.yml --skip=validate --timeout 60m0s
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
