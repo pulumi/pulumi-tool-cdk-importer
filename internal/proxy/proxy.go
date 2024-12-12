@@ -1,0 +1,111 @@
+// Copyright 2016-2024, Pulumi Corporation.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package proxy
+
+import (
+	"context"
+
+	"github.com/pulumi/providertest/providers"
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
+)
+
+const (
+	awsNative        = "aws-native"
+	aws              = "aws"
+	docker           = "docker-build"
+	awsVersion       = "6.64.0"
+	awsNativeVersion = "1.14.0"
+	dockerVersion    = "0.0.7"
+)
+
+type pulumiTest struct {
+	source string
+}
+
+func (pt pulumiTest) Source() string {
+	return pt.source
+}
+
+func RunPulumiUpWithProxies(ctx context.Context, lookups lookups.Lookups, workDir string) error {
+	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir})
+	if err != nil {
+		return err
+	}
+	ws, err := auto.NewLocalWorkspace(ctx, auto.WorkDir(workDir))
+	if err != nil {
+		return err
+	}
+	stack, err := ws.Stack(ctx)
+	if err != nil {
+		return nil
+	}
+	s, err := auto.UpsertStackLocalSource(ctx, stack.Name, workDir, auto.EnvVars(envVars))
+	if err != nil {
+		return err
+	}
+	_, err = s.Up(ctx, optup.ContinueOnError())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func startProxiedProviders(
+	ctx context.Context,
+	client lookups.Lookups,
+	pt providers.PulumiTest,
+) (map[string]string, error) {
+	awsLookups := lookups.NewAwsLookups(client.GetCfnStackResources(), client.GetRegion(), client.GetAccount())
+	native1 := providers.DownloadPluginBinaryFactory(awsNative, awsNativeVersion)
+	native2 := providers.ProviderInterceptFactory(ctx, native1, awsCCApiInterceptors(client))
+	classic1 := providers.DownloadPluginBinaryFactory(aws, awsVersion)
+	classic2 := providers.ProviderInterceptFactory(ctx, classic1, awsInterceptors(awsLookups))
+	docker1 := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
+	docker2 := providers.ProviderInterceptFactory(ctx, docker1, dockerInterceptors())
+	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
+		"aws-native":   native2,
+		"aws":          classic2,
+		"docker-build": docker2,
+	}, pt)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
+		"PULUMI_DEBUG_PROVIDERS": providers.GetDebugProvidersEnv(ps),
+	}, nil
+}
+
+func dockerInterceptors() providers.ProviderInterceptors {
+	i := &dockerInterceptor{}
+	return providers.ProviderInterceptors{
+		Create: i.create,
+	}
+}
+
+func awsInterceptors(lookups lookups.Lookups) providers.ProviderInterceptors {
+	i := &awsInterceptor{lookups}
+	return providers.ProviderInterceptors{
+		Create: i.create,
+	}
+}
+
+func awsCCApiInterceptors(lookups lookups.Lookups) providers.ProviderInterceptors {
+	i := &awsCCApiInterceptor{lookups}
+	return providers.ProviderInterceptors{
+		Create: i.create,
+	}
+}

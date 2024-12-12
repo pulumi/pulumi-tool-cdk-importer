@@ -18,13 +18,16 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/metadata"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 )
 
 // Given a set of Pulumi resource properties, try to recover the primary CF resource ID. This does not work if the
 // necessary data is not present in the property map, in which case the function returns false.
-func RecoverPrimaryResourceID(resTok tokens.Type, data resource.PropertyMap) (PrimaryResourceID, bool) {
+func RecoverPrimaryResourceID(resTok tokens.Type, data resource.PropertyMap) (common.PrimaryResourceID, bool) {
+	awsNativeMetadata := metadata.NewCCApiMetadataSource()
 	pi, ok := awsNativeMetadata.PrimaryIdentifier(resTok)
 	if !ok {
 		return "", false
@@ -40,5 +43,5 @@ func RecoverPrimaryResourceID(resTok tokens.Type, data resource.PropertyMap) (Pr
 		components = append(components, dp.StringValue())
 	}
 
-	return PrimaryResourceID(strings.Join(components, "|")), true
+	return common.PrimaryResourceID(strings.Join(components, "|")), true
 }

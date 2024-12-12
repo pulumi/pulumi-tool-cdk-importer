@@ -18,6 +18,10 @@ import (
 	"context"
 	"flag"
 	"log"
+
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/proxy"
 )
 
 func main() {
@@ -25,29 +29,22 @@ func main() {
 	// var bucketIdRef = flag.String("bucket", "", "CDK logical ID for Bucket to import")
 	// flag.Parse()
 	var stackRef = flag.String("stack", "", "CloudFormation stack name")
-	var classicProviderBinLocation = flag.String("classic-bin", "", "Location to the aws classic bin")
 	flag.Parse()
 	if stackRef == nil || *stackRef == "" {
 		log.Fatalf("stack is required")
 	}
-	stackName := StackName(*stackRef)
+	stackName := common.StackName(*stackRef)
 
-	if classicProviderBinLocation == nil || *classicProviderBinLocation == "" {
-		log.Fatalf("classic-bin is required")
-	}
-
-	classicBinLocation := AwsClassicBinLocation(*classicProviderBinLocation)
-
-	cc, err := newCcapi(ctx)
+	cc, err := lookups.NewCCApiLookups(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := cc.getStackResources(ctx, stackName); err != nil {
+	if err := cc.GetStackResources(ctx, stackName); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := runPulumiUpWithProxies(ctx, cc, ".", classicBinLocation); err != nil {
+	if err := proxy.RunPulumiUpWithProxies(ctx, cc, "."); err != nil {
 		log.Fatal(err)
 	}
 }
