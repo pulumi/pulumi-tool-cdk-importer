@@ -30,7 +30,7 @@ import (
 
 const (
 	awsNativeRepo   = "pulumi/pulumi-aws-native"
-	awsNativeBranch = "t0yv0/import-ids"
+	awsNativeBranch = "master"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 	fmt.Println(remote)
 
 	src := filepath.Join(remote, "provider", "cmd", "pulumi-resource-aws-native", "metadata.json")
-	copyFile(src, "pulumi-aws-native-metadata.json")
+	copyFile(src, "internal/metadata/schemas/pulumi-aws-native-metadata.json")
 }
 
 func copyFile(src, dest string) {

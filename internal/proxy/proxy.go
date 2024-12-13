@@ -20,16 +20,17 @@ import (
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 )
 
 const (
-	awsNative        = "aws-native"
-	aws              = "aws"
-	docker           = "docker-build"
-	awsVersion       = "6.64.0"
-	awsNativeVersion = "1.14.0"
-	dockerVersion    = "0.0.7"
+	awsCCApi        = "aws-native"
+	aws             = "aws"
+	docker          = "docker-build"
+	awsVersion      = "6.64.0"
+	awsCCApiVersion = "1.14.0"
+	dockerVersion   = "0.0.7"
 )
 
 type pulumiTest struct {
@@ -57,7 +58,10 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups lookups.Lookups, workDi
 	if err != nil {
 		return err
 	}
-	_, err = s.Up(ctx, optup.ContinueOnError())
+	level := uint(1)
+	_, err = s.Up(ctx, optup.ContinueOnError(), optup.DebugLogging(debug.LoggingOptions{
+		LogLevel: &level,
+	}))
 	if err != nil {
 		return err
 	}
@@ -70,16 +74,16 @@ func startProxiedProviders(
 	pt providers.PulumiTest,
 ) (map[string]string, error) {
 	awsLookups := lookups.NewAwsLookups(client.GetCfnStackResources(), client.GetRegion(), client.GetAccount())
-	native1 := providers.DownloadPluginBinaryFactory(awsNative, awsNativeVersion)
-	native2 := providers.ProviderInterceptFactory(ctx, native1, awsCCApiInterceptors(client))
-	classic1 := providers.DownloadPluginBinaryFactory(aws, awsVersion)
-	classic2 := providers.ProviderInterceptFactory(ctx, classic1, awsInterceptors(awsLookups))
-	docker1 := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
-	docker2 := providers.ProviderInterceptFactory(ctx, docker1, dockerInterceptors())
+	ccapiBinary := providers.DownloadPluginBinaryFactory(awsCCApi, awsCCApiVersion)
+	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(client))
+	awsBinary := providers.DownloadPluginBinaryFactory(aws, awsVersion)
+	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(awsLookups))
+	dockerBinary := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
+	dockerIntercept := providers.ProviderInterceptFactory(ctx, dockerBinary, dockerInterceptors())
 	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
-		"aws-native":   native2,
-		"aws":          classic2,
-		"docker-build": docker2,
+		"aws-native":   ccapiIntercept,
+		"aws":          awsIntercept,
+		"docker-build": dockerIntercept,
 	}, pt)
 	if err != nil {
 		return nil, err

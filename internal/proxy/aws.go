@@ -3,8 +3,6 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -29,17 +27,12 @@ func (i *awsInterceptor) create(
 		return nil, err
 	}
 	resourceType := string(urn.Type())
-	log.New(os.Stderr, "", 0).Println("Create: AWS ResourceType: ", resourceType)
-	glog.Warning("Create: AWS ResourceType: ", resourceType)
 
-	// bucket objects are a special case. CDK doesn't have a resource for them, they are handled
-	// by cdk assets which is a cli tool. pulumi-cdk converts them into BucketObjectV2 so go ahead
-	// and just create the object
+	// These resources are only mapped to classic resources in the synthesizer so these
+	// resources won't be imported
 	switch resourceType {
 	case "aws:s3/bucketObjectv2:BucketObjectv2":
 		fallthrough
-	// These resources are only mapped to classic resources in the synthesizer so these
-	// resources won't be imported
 	case "aws:s3/bucketV2:BucketV2":
 		fallthrough
 	case "aws:s3/bucketLifecycleConfigurationV2:BucketLifecycleConfigurationV2":
@@ -53,6 +46,14 @@ func (i *awsInterceptor) create(
 	case "aws:ecr/repository:Repository":
 		fallthrough
 	case "aws:ecr/lifecyclePolicy:LifecyclePolicy":
+		fallthrough
+	// These resources are incorrectly mapped. In CDK they are inline policies,
+	// but they are mapped to actual policy resources so they can't be imported.
+	// Just create them as new resources
+	case "aws:iam/policy:Policy":
+		fallthrough
+	case "aws:iam/rolePolicyAttachment:RolePolicyAttachment":
+		glog.V(1).Infof("Resource type %s is not supported for import, creating instead", resourceType)
 		return client.Create(ctx, in)
 	}
 	label := fmt.Sprintf("%s.Create(%s)", "aws-proxy", urn)
@@ -73,7 +74,8 @@ func (i *awsInterceptor) create(
 	if err != nil {
 		return nil, err
 	}
-	log.New(os.Stderr, "", 0).Printf("Reading ID %s for URN %s ...", string(prim), string(urn))
+
+	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", resourceType, string(prim), string(urn))
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
 		Id:  string(prim),
 		Urn: string(urn),

@@ -26,8 +26,6 @@ import (
 
 func main() {
 	ctx := context.Background()
-	// var bucketIdRef = flag.String("bucket", "", "CDK logical ID for Bucket to import")
-	// flag.Parse()
 	var stackRef = flag.String("stack", "", "CloudFormation stack name")
 	flag.Parse()
 	if stackRef == nil || *stackRef == "" {

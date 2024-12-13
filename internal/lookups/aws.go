@@ -53,26 +53,34 @@ func (a *awsLookups) FindPrimaryResourceID(
 	logicalID common.LogicalResourceID,
 	props map[string]any,
 ) (common.PrimaryResourceID, error) {
-	resourceType, idParts, err := getIdentifiers(ctx, metadata.NewAwsMetadataSource(), resourceToken)
+	resourceType, idParts, err := getPrimaryIdentifiers(metadata.NewAwsMetadataSource(), resourceToken)
 	if err != nil {
 		return "", err
 	}
 	switch len(idParts) {
 	case 0:
-		return "", fmt.Errorf("Cannot have 0 ID parts")
+		return "", fmt.Errorf("ResourceType %q with logicalID %q has no primary identifiers", resourceType, logicalID)
 	case 1:
-		return a.findOwnClassicId(ctx, resourceType, logicalID, idParts[0])
+		// if there is only one primary identifier, then we should be able to
+		// use that to find the resource
+		return a.findOwnAwsId(resourceType, logicalID, idParts[0])
 	default:
+		// if there are multiple primary identifiers, then we probably need to use all of them
+		// to find the resource. There is also probably a resource model that we need to use
+		// in the CCAPI ListResources API call
 		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
 			return s
 		})
 		if err != nil {
 			return "", err
 		}
-		return a.findClassicCompositeId(logicalID, resourceModel)
+		return a.findAwsCompositeId(logicalID, resourceModel)
 	}
 }
 
+// getArnForResource will create an ARN for the given resourceType and name
+// This is needed for some special resources where the id is the arn. In these
+// cases the arn will probably not be part of the data that we have so we need to construct it
 func (a *awsLookups) getArnForResource(resourceType common.ResourceType, name string) (common.PrimaryResourceID, error) {
 	switch resourceType {
 	case "AWS::IAM::Policy":
@@ -81,7 +89,9 @@ func (a *awsLookups) getArnForResource(resourceType common.ResourceType, name st
 	return "", fmt.Errorf("Arn lookup for resourceType %q not supported", resourceType)
 }
 
-func renderClassicId(id string, resourceModel map[string]string) string {
+// renderAwsImportId will create a AWS import id value.
+// AWS import ids are concatenated with a '/' separator
+func renderAwsImportId(id string, resourceModel map[string]string) string {
 	prefix := ""
 	for _, value := range resourceModel {
 		prefix = fmt.Sprintf("%s%s/", prefix, value)
@@ -89,20 +99,21 @@ func renderClassicId(id string, resourceModel map[string]string) string {
 	return fmt.Sprintf("%s%s", prefix, id)
 }
 
-func (a *awsLookups) findClassicCompositeId(
+// findAwsCompositeId returns a lookup id for an AWS resource where
+// the lookup id contains multiple values
+func (a *awsLookups) findAwsCompositeId(
 	logicalID common.LogicalResourceID,
 	resourceModel map[string]string,
 ) (common.PrimaryResourceID, error) {
 	if r, ok := a.cfnStackResources[logicalID]; ok {
 		suffix := string(r.PhysicalID)
-		return common.PrimaryResourceID(renderClassicId(suffix, resourceModel)), nil
+		return common.PrimaryResourceID(renderAwsImportId(suffix, resourceModel)), nil
 	}
-	return "", fmt.Errorf("Couldn't find id")
+	return "", fmt.Errorf("Couldn't find an import id for resource with logicalID %q", logicalID)
 }
 
-// findOwnId should only be used when the resource only has a single element in it's identifier
-func (a *awsLookups) findOwnClassicId(
-	ctx context.Context,
+// findOwnAwsId should only be used when the resource only has a single element in it's identifier
+func (a *awsLookups) findOwnAwsId(
 	resourceType common.ResourceType,
 	logicalID common.LogicalResourceID,
 	primaryID resource.PropertyKey,
@@ -110,7 +121,7 @@ func (a *awsLookups) findOwnClassicId(
 	idPropertyName := strings.ToLower(string(primaryID))
 	if strings.HasSuffix(idPropertyName, "name") || strings.HasSuffix(idPropertyName, "id") {
 		if r, ok := a.cfnStackResources[logicalID]; ok {
-			// NOTE! Assuming that PrimaryResourceID matches the PhysicalID.
+			// NOTE: Assuming that PrimaryResourceID matches the PhysicalID.
 			return common.PrimaryResourceID(r.PhysicalID), nil
 		}
 		return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
@@ -118,8 +129,8 @@ func (a *awsLookups) findOwnClassicId(
 		if r, ok := a.cfnStackResources[logicalID]; ok {
 			return a.getArnForResource(resourceType, string(r.PhysicalID))
 		}
-		return "", fmt.Errorf("Finding resource ids by Arn is not yet supported")
+		return "", fmt.Errorf("Finding resource ids by Arn for resource type %q is not yet supported", resourceType)
 	} else {
-		return "", fmt.Errorf("Expected suffix of 'Id', 'Name', or 'Arn'; got %s", idPropertyName)
+		return "", fmt.Errorf("Expected suffix of 'Id', 'Name', or 'Arn'; got %s for resource with logicalId %q", idPropertyName, logicalID)
 	}
 }
