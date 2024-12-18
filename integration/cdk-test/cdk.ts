@@ -9,13 +9,7 @@ import { AppStagingSynthesizer, DeploymentIdentities } from '@aws-cdk/app-stagin
 const appId = `import-app${process.env.CDK_APP_ID_SUFFIX ?? ''}`
 class TestStack extends cdk.Stack {
   constructor(scope: Construct, id: string) {
-    super(scope, id, {
-      synthesizer: AppStagingSynthesizer.defaultResources({
-        appId,
-        stagingBucketEncryption: s3.BucketEncryption.S3_MANAGED,
-        deploymentIdentities: DeploymentIdentities.cliCredentials(),
-      }),
-    });
+    super(scope, id);
 
     const core = new Core(this, 'core');
     new LambdaApp(this, 'lambda', {
@@ -33,5 +27,11 @@ class TestStack extends cdk.Stack {
   }
 }
 
-const app = new cdk.App();
+const app = new cdk.App({
+  defaultStackSynthesizer: AppStagingSynthesizer.defaultResources({
+    appId,
+    stagingBucketEncryption: s3.BucketEncryption.S3_MANAGED,
+    deploymentIdentities: DeploymentIdentities.defaultBootstrapRoles({ bootstrapRegion: 'us-west-2' }),
+  }),
+});
 new TestStack(app, 'import-test');
