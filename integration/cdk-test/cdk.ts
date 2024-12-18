@@ -31,7 +31,6 @@ const app = new cdk.App({
   defaultStackSynthesizer: AppStagingSynthesizer.defaultResources({
     appId,
     stagingBucketEncryption: s3.BucketEncryption.S3_MANAGED,
-    deploymentIdentities: DeploymentIdentities.defaultBootstrapRoles({ bootstrapRegion: 'us-west-2' }),
   }),
 });
 new TestStack(app, 'import-test');
