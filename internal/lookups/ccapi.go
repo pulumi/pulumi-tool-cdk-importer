@@ -8,17 +8,20 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
-	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pulumi/pulumi-aws-native/provider/pkg/naming"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/metadata"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 )
+
+// ListResourcesPager is an interface for cloudcontrol.ListResourcesPaginator
+type ListResourcesPager interface {
+	HasMorePages() bool
+	NextPage(ctx context.Context, optFns ...func(*cloudcontrol.Options)) (*cloudcontrol.ListResourcesOutput, error)
+}
 
 // A key to use for caching resources
 type resourceCacheKey string
@@ -33,47 +36,35 @@ func makeCacheKey(resourceType common.ResourceType, resourceModel map[string]str
 	return resourceCacheKey(key)
 }
 
+// CCAPIClient is a client for the cloudcontrol API
+type CCAPIClient interface {
+	GetPager(typeName string, resourceModel *string) ListResourcesPager
+}
+
+type ccapiClient struct {
+	client *cloudcontrol.Client
+}
+
+// GetPager gets a ListResourcesPager for a given type and resource model
+func (c *ccapiClient) GetPager(typeName string, resourceModel *string) ListResourcesPager {
+	return cloudcontrol.NewListResourcesPaginator(c.client, &cloudcontrol.ListResourcesInput{
+		TypeName:      &typeName,
+		ResourceModel: resourceModel,
+	})
+}
+
 type ccapiLookups struct {
-	ccapiClient        *cloudcontrol.Client
-	region             string
-	account            string
-	cfnClient          *cloudformation.Client
-	cfnStackResources  map[common.LogicalResourceID]cfnStackResource
+	ccapiClient        CCAPIClient
+	cfnStackResources  map[common.LogicalResourceID]CfnStackResource
 	ccapiResourceCache map[resourceCacheKey][]types.ResourceDescription
 }
 
-func NewCCApiLookups(ctx context.Context) (*ccapiLookups, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	client := cloudcontrol.NewFromConfig(cfg)
-	cfnClient := cloudformation.NewFromConfig(cfg)
-	stsClient := sts.NewFromConfig(cfg)
-	res, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	if err != nil {
-		return nil, err
-	}
+func NewCCApiLookups(ctx context.Context, client *cloudcontrol.Client, cfnStackResources map[common.LogicalResourceID]CfnStackResource) (*ccapiLookups, error) {
 	return &ccapiLookups{
-		region:             cfg.Region,
-		account:            *res.Account,
-		ccapiClient:        client,
-		cfnClient:          cfnClient,
-		cfnStackResources:  make(map[common.LogicalResourceID]cfnStackResource),
+		ccapiClient:        &ccapiClient{client: client},
+		cfnStackResources:  cfnStackResources,
 		ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
 	}, nil
-}
-
-func (c *ccapiLookups) GetRegion() string {
-	return c.region
-}
-
-func (c *ccapiLookups) GetAccount() string {
-	return c.account
-}
-
-func (c *ccapiLookups) GetCfnStackResources() map[common.LogicalResourceID]cfnStackResource {
-	return c.cfnStackResources
 }
 
 func (c *ccapiLookups) FindLogicalResourceID(
@@ -89,7 +80,7 @@ func (c *ccapiLookups) FindPrimaryResourceID(
 	logicalID common.LogicalResourceID,
 	props map[string]any,
 ) (common.PrimaryResourceID, error) {
-	c.cfnStackResources[logicalID] = cfnStackResource{
+	c.cfnStackResources[logicalID] = CfnStackResource{
 		ResourceType: c.cfnStackResources[logicalID].ResourceType,
 		LogicalID:    logicalID,
 		PhysicalID:   c.cfnStackResources[logicalID].PhysicalID,
@@ -248,10 +239,7 @@ func (c *ccapiLookups) listResources(
 	}
 
 	typeName := string(resourceType)
-	paginator := cloudcontrol.NewListResourcesPaginator(c.ccapiClient, &cloudcontrol.ListResourcesInput{
-		ResourceModel: model,
-		TypeName:      &typeName,
-	})
+	paginator := c.ccapiClient.GetPager(typeName, model)
 	resources := []types.ResourceDescription{}
 	// TODO: we might be able to short circuit this if we find the correct one
 	for paginator.HasMorePages() {
@@ -264,30 +252,4 @@ func (c *ccapiLookups) listResources(
 
 	c.ccapiResourceCache[cacheKey] = resources
 	return resources, nil
-}
-
-// GetStackResources Gets all the resources from a CloudFormation stack
-func (c *ccapiLookups) GetStackResources(ctx context.Context, stackName common.StackName) error {
-	sn := string(stackName)
-	paginator := cloudformation.NewListStackResourcesPaginator(c.cfnClient, &cloudformation.ListStackResourcesInput{
-		StackName: &sn,
-	})
-	for paginator.HasMorePages() {
-		output, err := paginator.NextPage(ctx)
-		if err != nil {
-			return err
-		}
-		for _, s := range output.StackResourceSummaries {
-			if s.PhysicalResourceId == nil || s.LogicalResourceId == nil || s.ResourceType == nil {
-				continue
-			}
-			r := cfnStackResource{
-				ResourceType: common.ResourceType(*s.ResourceType),
-				LogicalID:    common.LogicalResourceID(*s.LogicalResourceId),
-				PhysicalID:   common.PhysicalResourceID(*s.PhysicalResourceId),
-			}
-			c.cfnStackResources[r.LogicalID] = r
-		}
-	}
-	return nil
 }

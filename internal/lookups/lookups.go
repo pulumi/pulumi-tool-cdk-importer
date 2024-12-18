@@ -5,34 +5,46 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/metadata"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/urn"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 )
 
-type Lookups interface {
-	// FindPrimarResourceID attempts to find the primary identifier for a resource.
-	// This id is what will be used to run the import of the resource
-	FindPrimaryResourceID(ctx context.Context, resourceType tokens.Type, logicalID common.LogicalResourceID, props map[string]interface{}) (common.PrimaryResourceID, error)
+type Lookups struct {
+	CCAPIClient       *cloudcontrol.Client
+	CfnClient         *cloudformation.Client
+	Region            string
+	Account           string
+	CfnStackResources map[common.LogicalResourceID]CfnStackResource
+}
 
-	// FindLogicalResourceID attempts to find the logical resource id for a given URN.
-	// The logical resource id is the id that is used to correlate the Pulumi resource with the CFN resource
-	FindLogicalResourceID(urn urn.URN) (common.LogicalResourceID, error)
-
-	// GetCfnStackResources returns the Resources in the CloudFormation stack
-	GetCfnStackResources() map[common.LogicalResourceID]cfnStackResource
-
-	// GetRegion returns the region of the stack
-	GetRegion() string
-
-	// GetAccount returns the account of the stack
-	GetAccount() string
+func NewDefaultLookups(ctx context.Context) (*Lookups, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfnClient := cloudformation.NewFromConfig(cfg)
+	stsClient := sts.NewFromConfig(cfg)
+	res, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, err
+	}
+	return &Lookups{
+		CCAPIClient:       cloudcontrol.NewFromConfig(cfg),
+		Region:            cfg.Region,
+		Account:           *res.Account,
+		CfnClient:         cfnClient,
+		CfnStackResources: make(map[common.LogicalResourceID]CfnStackResource),
+	}, nil
 }
 
 // cfnStackResource represents a CloudFormation resource
-type cfnStackResource struct {
+type CfnStackResource struct {
 	// The type of the resource, i.e. AWS::S3::Bucket
 	ResourceType common.ResourceType
 
@@ -63,7 +75,7 @@ func renderResourceModel(idParts []resource.PropertyKey, props map[string]any, r
 			if val, ok := prop.(string); ok {
 				model[cfnName] = val
 			} else {
-				return nil, fmt.Errorf("id property %s is not a string", prop)
+				return nil, fmt.Errorf("expected id property %q to be a string; got %v", cfnName, prop)
 			}
 		}
 	}
@@ -87,15 +99,16 @@ func getPrimaryIdentifiers(metadata metadata.MetadataSource, resourceToken token
 func findLogicalResourceID(
 	urn resource.URN,
 	metadata metadata.MetadataSource,
-	cfnStackResources map[common.LogicalResourceID]cfnStackResource,
+	cfnStackResources map[common.LogicalResourceID]CfnStackResource,
 ) (common.LogicalResourceID, error) {
 	resourceToken := urn.Type()
 	resourceType, ok := metadata.ResourceType(resourceToken)
 	if !ok {
 		return "", fmt.Errorf("Unknown resource type: %v", resourceToken)
 	}
+
 	matchCount := 0
-	var match cfnStackResource
+	var match CfnStackResource
 	for _, r := range cfnStackResources {
 		if r.ResourceType != resourceType {
 			continue
@@ -112,4 +125,30 @@ func findLogicalResourceID(
 		return "", fmt.Errorf("Conflicting matching CF resources for URN %v", urn)
 	}
 	return match.LogicalID, nil
+}
+
+// GetStackResources Gets all the resources from a CloudFormation stack
+func (l *Lookups) GetStackResources(ctx context.Context, stackName common.StackName) error {
+	sn := string(stackName)
+	paginator := cloudformation.NewListStackResourcesPaginator(l.CfnClient, &cloudformation.ListStackResourcesInput{
+		StackName: &sn,
+	})
+	for paginator.HasMorePages() {
+		output, err := paginator.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		for _, s := range output.StackResourceSummaries {
+			if s.PhysicalResourceId == nil || s.LogicalResourceId == nil || s.ResourceType == nil {
+				continue
+			}
+			r := CfnStackResource{
+				ResourceType: common.ResourceType(*s.ResourceType),
+				LogicalID:    common.LogicalResourceID(*s.LogicalResourceId),
+				PhysicalID:   common.PhysicalResourceID(*s.PhysicalResourceId),
+			}
+			l.CfnStackResources[r.LogicalID] = r
+		}
+	}
+	return nil
 }

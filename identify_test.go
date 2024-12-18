@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/stretchr/testify/assert"
@@ -25,9 +26,9 @@ import (
 
 func TestRecoverPrimaryResourceID(t *testing.T) {
 	testCases := []struct {
-		resource  tokens.Token
+		resource  tokens.Type
 		data      resource.PropertyMap
-		primaryID CFPrimaryResourceID
+		primaryID common.PrimaryResourceID
 	}{
 		{
 			resource: "aws-native:s3:Bucket",

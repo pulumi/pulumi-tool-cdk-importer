@@ -1,0 +1,12 @@
+{
+    "name": "pulumi-cdk-demo",
+    "main": "index.ts",
+    "devDependencies": {
+        "@types/node": "^22",
+        "typescript": "^5.7.2"
+    },
+    "dependencies": {
+        "constructs": "^10.4.2",
+        "express": "^4.21.2"
+    }
+}

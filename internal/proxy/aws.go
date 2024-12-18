@@ -13,7 +13,7 @@ import (
 )
 
 type awsInterceptor struct {
-	client lookups.Lookups
+	*lookups.Lookups
 }
 
 func (i *awsInterceptor) create(
@@ -21,7 +21,7 @@ func (i *awsInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
-	c := i.client
+	c := lookups.NewAwsLookups(i.CfnStackResources, i.Region, i.Account)
 	urn, err := resource.ParseURN(in.GetUrn())
 	if err != nil {
 		return nil, err

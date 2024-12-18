@@ -16,8 +16,10 @@ package proxy
 
 import (
 	"context"
+	"os"
 
 	"github.com/pulumi/providertest/providers"
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
@@ -41,7 +43,13 @@ func (pt pulumiTest) Source() string {
 	return pt.source
 }
 
-func RunPulumiUpWithProxies(ctx context.Context, lookups lookups.Lookups, workDir string) error {
+type ProxiesConfig struct {
+	Region            string
+	Account           string
+	CfnStackResources map[common.LogicalResourceID]lookups.CfnStackResource
+}
+
+func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workDir string) error {
 	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir})
 	if err != nil {
 		return err
@@ -59,8 +67,9 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups lookups.Lookups, workDi
 		return err
 	}
 	level := uint(1)
-	_, err = s.Up(ctx, optup.ContinueOnError(), optup.DebugLogging(debug.LoggingOptions{
-		LogLevel: &level,
+	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+		LogLevel:      &level,
+		FlowToPlugins: true,
 	}))
 	if err != nil {
 		return err
@@ -70,14 +79,13 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups lookups.Lookups, workDi
 
 func startProxiedProviders(
 	ctx context.Context,
-	client lookups.Lookups,
+	lookups *lookups.Lookups,
 	pt providers.PulumiTest,
 ) (map[string]string, error) {
-	awsLookups := lookups.NewAwsLookups(client.GetCfnStackResources(), client.GetRegion(), client.GetAccount())
 	ccapiBinary := providers.DownloadPluginBinaryFactory(awsCCApi, awsCCApiVersion)
-	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(client))
+	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(lookups))
 	awsBinary := providers.DownloadPluginBinaryFactory(aws, awsVersion)
-	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(awsLookups))
+	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(lookups))
 	dockerBinary := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
 	dockerIntercept := providers.ProviderInterceptFactory(ctx, dockerBinary, dockerInterceptors())
 	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
@@ -100,14 +108,14 @@ func dockerInterceptors() providers.ProviderInterceptors {
 	}
 }
 
-func awsInterceptors(lookups lookups.Lookups) providers.ProviderInterceptors {
+func awsInterceptors(lookups *lookups.Lookups) providers.ProviderInterceptors {
 	i := &awsInterceptor{lookups}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}
 }
 
-func awsCCApiInterceptors(lookups lookups.Lookups) providers.ProviderInterceptors {
+func awsCCApiInterceptors(lookups *lookups.Lookups) providers.ProviderInterceptors {
 	i := &awsCCApiInterceptor{lookups}
 	return providers.ProviderInterceptors{
 		Create: i.create,

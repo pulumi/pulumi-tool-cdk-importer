@@ -33,7 +33,7 @@ func main() {
 	}
 	stackName := common.StackName(*stackRef)
 
-	cc, err := lookups.NewCCApiLookups(ctx)
+	cc, err := lookups.NewDefaultLookups(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

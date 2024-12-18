@@ -15,7 +15,7 @@ import (
 )
 
 type awsCCApiInterceptor struct {
-	client lookups.Lookups
+	*lookups.Lookups
 }
 
 func (i *awsCCApiInterceptor) create(
@@ -23,7 +23,10 @@ func (i *awsCCApiInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
-	c := i.client
+	c, err := lookups.NewCCApiLookups(ctx, i.CCAPIClient, i.CfnStackResources)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API Client for CCAPI: %w", err)
+	}
 	urn, err := resource.ParseURN(in.GetUrn())
 	if err != nil {
 		return nil, err

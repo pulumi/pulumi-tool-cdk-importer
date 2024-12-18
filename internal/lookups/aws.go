@@ -14,11 +14,11 @@ import (
 type awsLookups struct {
 	region            string
 	account           string
-	cfnStackResources map[common.LogicalResourceID]cfnStackResource
+	cfnStackResources map[common.LogicalResourceID]CfnStackResource
 }
 
 func NewAwsLookups(
-	resources map[common.LogicalResourceID]cfnStackResource,
+	resources map[common.LogicalResourceID]CfnStackResource,
 	region string,
 	account string,
 ) *awsLookups {
@@ -27,18 +27,6 @@ func NewAwsLookups(
 		account:           account,
 		cfnStackResources: resources,
 	}
-}
-
-func (a *awsLookups) GetCfnStackResources() map[common.LogicalResourceID]cfnStackResource {
-	return a.cfnStackResources
-}
-
-func (a *awsLookups) GetRegion() string {
-	return a.region
-}
-
-func (a *awsLookups) GetAccount() string {
-	return a.account
 }
 
 func (c *awsLookups) FindLogicalResourceID(
