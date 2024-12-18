@@ -16,7 +16,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/util/cmdutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
@@ -42,10 +41,11 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
 	cmd.Stdout = cmdOutput{t}
+	cmd.Stderr = cmdOutput{t}
 
 	runerr := cmd.Run()
 	if runerr != nil {
-		t.Logf("Invoke '%v' failed: %s\n", command, cmdutil.DetailedError(runerr))
+		t.Logf("Invoke '%v' failed: %s\n", command, runerr.Error())
 	}
 	return runerr
 }

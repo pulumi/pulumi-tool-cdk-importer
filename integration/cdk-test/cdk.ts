@@ -4,7 +4,7 @@ import { Core } from './constructs/core';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { LambdaApp } from './constructs/lambda';
 import { EcsApp } from './constructs/ecs';
-import { AppStagingSynthesizer } from '@aws-cdk/app-staging-synthesizer-alpha';
+import { AppStagingSynthesizer, DeploymentIdentities } from '@aws-cdk/app-staging-synthesizer-alpha';
 
 const appId = `import-app${process.env.CDK_APP_ID_SUFFIX ?? ''}`
 class TestStack extends cdk.Stack {
@@ -13,6 +13,7 @@ class TestStack extends cdk.Stack {
       synthesizer: AppStagingSynthesizer.defaultResources({
         appId,
         stagingBucketEncryption: s3.BucketEncryption.S3_MANAGED,
+        deploymentIdentities: DeploymentIdentities.cliCredentials(),
       }),
     });
 
