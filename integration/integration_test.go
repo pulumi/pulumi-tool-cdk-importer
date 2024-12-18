@@ -54,6 +54,13 @@ func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) error 
 	return runCmd(t, workspace, "node_modules/.bin/cdk", args)
 }
 
+func skipIfShort(t *testing.T) {
+	if testing.Short() {
+		t.Skipf("Skipping in testing.Short() mode, assuming this is a CI run without credentials")
+	}
+
+}
+
 func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) error {
 	binPath, err := filepath.Abs("../bin")
 	if err != nil {
@@ -65,6 +72,7 @@ func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) 
 }
 
 func TestImport(t *testing.T) {
+	skipIfShort(t)
 	sourceDir := filepath.Join(getCwd(t), "cdk-test")
 	test := pulumitest.NewPulumiTest(t, sourceDir)
 

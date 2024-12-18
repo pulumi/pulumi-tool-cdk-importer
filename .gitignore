@@ -27,3 +27,4 @@ pulumi-tool-cdk-importer
 cover.cov
 integration/**/node_modules/
 bin
+coverage.txt
