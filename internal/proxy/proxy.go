@@ -16,8 +16,8 @@ package proxy
 
 import (
 	"context"
-	"os"
 
+	"github.com/golang/glog"
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
@@ -34,6 +34,13 @@ const (
 	awsCCApiVersion = "1.14.0"
 	dockerVersion   = "0.0.7"
 )
+
+type cmdOutput struct{}
+
+func (c cmdOutput) Write(p []byte) (n int, err error) {
+	glog.Info(string(p))
+	return len(p), nil
+}
 
 type pulumiTest struct {
 	source string
@@ -67,7 +74,7 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 		return err
 	}
 	level := uint(1)
-	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(cmdOutput{}), optup.DebugLogging(debug.LoggingOptions{
 		LogLevel:      &level,
 		FlowToPlugins: true,
 	}))

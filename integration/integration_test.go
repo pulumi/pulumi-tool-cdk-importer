@@ -20,15 +20,6 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-type cmdOutput struct {
-	t *testing.T
-}
-
-func (c cmdOutput) Write(p []byte) (n int, err error) {
-	c.t.Log(string(p))
-	return len(p), nil
-}
-
 func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) error {
 	env := os.Environ()
 	for k, v := range workspace.GetEnvVars() {
@@ -39,13 +30,11 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	command := strings.Join(args, " ")
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
-	cmd.Stdout = cmdOutput{t}
-	cmd.Stderr = cmdOutput{t}
-
-	runerr := cmd.Run()
+	runout, runerr := cmd.CombinedOutput()
 	if runerr != nil {
 		t.Logf("Invoke '%v' failed: %s\n", command, runerr.Error())
 	}
+	t.Logf("Invoke '%v' output: %s\n", command, string(runout))
 	return runerr
 }
 
