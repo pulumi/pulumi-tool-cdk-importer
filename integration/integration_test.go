@@ -12,7 +12,6 @@ import (
 	"github.com/pulumi/providertest/pulumitest"
 	"github.com/pulumi/providertest/pulumitest/changesummary"
 
-	"github.com/pulumi/pulumi/pkg/v3/testing/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
@@ -74,9 +73,12 @@ func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) 
 func TestImport(t *testing.T) {
 	skipIfShort(t)
 	sourceDir := filepath.Join(getCwd(t), "cdk-test")
-	test := pulumitest.NewPulumiTest(t, sourceDir)
+	test := newPulumiTest(t, sourceDir)
+	suffix := getSuffix()
+	cdkStackName := fmt.Sprintf("import-test-%s", suffix)
 
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
+	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
 
 	defer func() {
 		runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
@@ -91,7 +93,7 @@ func TestImport(t *testing.T) {
 	t.Log("Importing resources")
 
 	// import cdk app
-	err = runImportCommand(t, test.CurrentStack().Workspace(), "import-test")
+	err = runImportCommand(t, test.CurrentStack().Workspace(), cdkStackName)
 	require.NoError(t, err)
 
 	t.Log("Import complete")
@@ -134,20 +136,10 @@ func getCwd(t *testing.T) string {
 	return cwd
 }
 
-func getBaseOptions(t *testing.T) integration.ProgramTestOptions {
+func newPulumiTest(t *testing.T, source string) *pulumitest.PulumiTest {
 	envRegion := getEnvRegion(t)
-	suffix := getSuffix()
-	return integration.ProgramTestOptions{
-		Config: map[string]string{
-			"aws:region":        envRegion,
-			"aws-native:region": envRegion,
-		},
-		Env: []string{"CDK_APP_ID_SUFFIX=" + suffix},
-		// some flakiness in some resource creation
-		// @see https://github.com/pulumi/pulumi-aws-native/issues/1714
-		RetryFailedSteps:     true,
-		ExpectRefreshChanges: true,
-		SkipRefresh:          true,
-		Quick:                true,
-	}
+	test := pulumitest.NewPulumiTest(t, source)
+	test.SetConfig(t, "aws:region", envRegion)
+	test.SetConfig(t, "aws-native:region", envRegion)
+	return test
 }
