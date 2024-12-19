@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/pulumi/providertest/pulumitest"
 	"github.com/pulumi/providertest/pulumitest/changesummary"
@@ -22,26 +20,28 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-func runCmd(ctx context.Context, t *testing.T, workspace auto.Workspace, commandPath string, args []string) error {
+func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) error {
 	env := os.Environ()
 	for k, v := range workspace.GetEnvVars() {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	cmd := exec.CommandContext(ctx, commandPath, args...)
+	cmd := exec.Command(commandPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	command := strings.Join(args, " ")
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
-	runout, runerr := cmd.CombinedOutput()
+	runerr := cmd.Run()
 	if runerr != nil {
 		t.Logf("Invoke '%v' failed: %s\n", command, runerr.Error())
 	}
-	t.Logf("Invoke '%v' output: %s\n", command, string(runout))
+	// t.Logf("Invoke '%v' output: %s\n", command, string(runout))
 	return runerr
 }
 
 func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) error {
-	return runCmd(context.Background(), t, workspace, "node_modules/.bin/cdk", args)
+	return runCmd(t, workspace, "node_modules/.bin/cdk", args)
 }
 
 func skipIfShort(t *testing.T) {
@@ -52,20 +52,13 @@ func skipIfShort(t *testing.T) {
 }
 
 func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5) // the import command should not take more than a couple of minutes
-	defer cancel()
-
 	binPath, err := filepath.Abs("../bin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	commandPath := filepath.Join(binPath, "pulumi-tool-cdk-importer")
 	args := []string{"-stack", stackName}
-	runerr := runCmd(ctx, t, workspace, commandPath, args)
-	if runerr != nil && ctx.Err() == context.DeadlineExceeded {
-		return nil
-	}
-	return runerr
+	return runCmd(t, workspace, commandPath, args)
 }
 
 func TestImport(t *testing.T) {

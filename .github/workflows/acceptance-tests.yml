@@ -51,7 +51,8 @@ jobs:
           total: ${{ matrix.parallel }}
           index: ${{ matrix.index }}
       - name: Run ${{ inputs.folder }} tests
-        run: cd ${{ inputs.folder }} && gotestsum --format github-actions -- -v -count=1 -timeout 2h -parallel 4 -run "${{ steps.test_split.outputs.run }}"
+        # run: cd ${{ inputs.folder }} && gotestsum --format github-actions -- -v -count=1 -timeout 2h -parallel 4 -run "${{ steps.test_split.outputs.run }}"
+        run: cd ${{ inputs.folder }} && go test -v -count=1 -timeout 1h -parallel 4 -run "${{ steps.test_split.outputs.run }}" ./...
     strategy:
       fail-fast: false
       matrix:
