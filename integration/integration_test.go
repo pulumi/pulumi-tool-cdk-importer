@@ -28,7 +28,7 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 
 	cmd := exec.Command(commandPath, args...)
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = os.Stdout
 	command := strings.Join(args, " ")
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
@@ -36,7 +36,6 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	if runerr != nil {
 		t.Logf("Invoke '%v' failed: %s\n", command, runerr.Error())
 	}
-	// t.Logf("Invoke '%v' output: %s\n", command, string(runout))
 	return runerr
 }
 

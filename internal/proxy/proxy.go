@@ -18,7 +18,6 @@ import (
 	"context"
 	"os"
 
-	"github.com/golang/glog"
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
@@ -51,6 +50,8 @@ type ProxiesConfig struct {
 }
 
 func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workDir string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir})
 	if err != nil {
 		return err
@@ -68,13 +69,9 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 		return err
 	}
 	level := uint(1)
-	// _, err = s.Up(ctx, optup.ContinueOnError(), optup.DebugLogging(debug.LoggingOptions{
-	upResult, err := s.Up(ctx, optup.ContinueOnError(), optup.SuppressProgress(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stderr), optup.DebugLogging(debug.LoggingOptions{
+	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
 		LogLevel: &level,
-		// FlowToPlugins: true,
 	}))
-	glog.Info("Result Stdout: %s", upResult.StdOut)
-	glog.Info("Result Stderr: %s", upResult.StdErr)
 	if err != nil {
 		return err
 	}
