@@ -4,6 +4,7 @@ import { LambdaApp } from './constructs/lambda';
 import { EcsApp } from './constructs/ecs';
 import { CfnOutput } from 'aws-cdk-lib';
 
+const suffix = process.env.CDK_APP_ID_SUFFIX ? `-${process.env.CDK_APP_ID_SUFFIX}` : '';
 class TestStack extends pulumicdk.Stack {
   constructor(scope: pulumicdk.App, id: string) {
     super(scope, id);
@@ -25,7 +26,7 @@ class TestStack extends pulumicdk.Stack {
 }
 
 const app = new pulumicdk.App('app', (scope: pulumicdk.App) => {
-  new TestStack(scope, 'import-test');
+  new TestStack(scope, `import-test${suffix}`);
 })
 
 export const url = app.outputs.Url

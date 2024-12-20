@@ -50,6 +50,8 @@ type ProxiesConfig struct {
 }
 
 func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workDir string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir})
 	if err != nil {
 		return err
@@ -67,9 +69,8 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 		return err
 	}
 	level := uint(1)
-	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
-		LogLevel:      &level,
-		FlowToPlugins: true,
+	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+		LogLevel: &level,
 	}))
 	if err != nil {
 		return err

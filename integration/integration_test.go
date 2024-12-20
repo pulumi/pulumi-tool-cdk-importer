@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,53 +9,60 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pulumi/providertest/pulumitest"
 	"github.com/pulumi/providertest/pulumitest/changesummary"
 
-	"github.com/pulumi/pulumi/pkg/v3/testing/integration"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/util/cmdutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
 )
 
-type cmdOutput struct {
-	t *testing.T
-}
-
-func (c cmdOutput) Write(p []byte) (n int, err error) {
-	c.t.Log(string(p))
-	return len(p), nil
-}
-
-func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) error {
+func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) ([]byte, error) {
 	env := os.Environ()
 	for k, v := range workspace.GetEnvVars() {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	cmd := exec.Command(commandPath, args...)
 	command := strings.Join(args, " ")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, commandPath, args...)
+	defer cancel()
+
+	// This is required in order to exit even if there are
+	// hanging child processes.
+	cmd.WaitDelay = time.Second * 1
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
-	cmd.Stdout = cmdOutput{t}
 
-	runerr := cmd.Run()
+	runout, runerr := cmd.CombinedOutput()
+	defer cmd.Process.Kill()
 	if runerr != nil {
-		t.Logf("Invoke '%v' failed: %s\n", command, cmdutil.DetailedError(runerr))
+		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
+		if runerr == exec.ErrWaitDelay {
+			return runout, nil
+		}
 	}
-	return runerr
+	return runout, runerr
 }
 
-func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) error {
+func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) ([]byte, error) {
 	return runCmd(t, workspace, "node_modules/.bin/cdk", args)
 }
 
-func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) error {
+func skipIfShort(t *testing.T) {
+	if testing.Short() {
+		t.Skipf("Skipping in testing.Short() mode, assuming this is a CI run without credentials")
+	}
+
+}
+
+func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) ([]byte, error) {
 	binPath, err := filepath.Abs("../bin")
 	if err != nil {
 		t.Fatal(err)
@@ -65,26 +73,34 @@ func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) 
 }
 
 func TestImport(t *testing.T) {
+	skipIfShort(t)
 	sourceDir := filepath.Join(getCwd(t), "cdk-test")
-	test := pulumitest.NewPulumiTest(t, sourceDir)
+	test := newPulumiTest(t, sourceDir)
+	suffix := getSuffix()
+	cdkStackName := fmt.Sprintf("import-test-%s", suffix)
 
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
+	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
 
 	defer func() {
-		runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
 		test.Destroy(t)
+		out, err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+		assert.NoError(t, err)
+		t.Logf("CDK destroy output: %s", out)
 	}()
 
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
-	err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
+	out, err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
 	require.NoError(t, err)
+	t.Logf("CDK deploy output: %s", out)
 
 	t.Log("Importing resources")
 
 	// import cdk app
-	err = runImportCommand(t, test.CurrentStack().Workspace(), "import-test")
+	out, err = runImportCommand(t, test.CurrentStack().Workspace(), cdkStackName)
 	require.NoError(t, err)
+	t.Logf("Import output: %s", out)
 
 	t.Log("Import complete")
 
@@ -126,20 +142,10 @@ func getCwd(t *testing.T) string {
 	return cwd
 }
 
-func getBaseOptions(t *testing.T) integration.ProgramTestOptions {
+func newPulumiTest(t *testing.T, source string) *pulumitest.PulumiTest {
 	envRegion := getEnvRegion(t)
-	suffix := getSuffix()
-	return integration.ProgramTestOptions{
-		Config: map[string]string{
-			"aws:region":        envRegion,
-			"aws-native:region": envRegion,
-		},
-		Env: []string{"CDK_APP_ID_SUFFIX=" + suffix},
-		// some flakiness in some resource creation
-		// @see https://github.com/pulumi/pulumi-aws-native/issues/1714
-		RetryFailedSteps:     true,
-		ExpectRefreshChanges: true,
-		SkipRefresh:          true,
-		Quick:                true,
-	}
+	test := pulumitest.NewPulumiTest(t, source)
+	test.SetConfig(t, "aws:region", envRegion)
+	test.SetConfig(t, "aws-native:region", envRegion)
+	return test
 }

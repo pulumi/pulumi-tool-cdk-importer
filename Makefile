@@ -6,3 +6,6 @@ build:
 
 generate:
 	go generate ./...
+
+test:
+	go test -v -short -coverpkg=./... -coverprofile=coverage.txt ./...
