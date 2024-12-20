@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -76,7 +77,7 @@ func TestImport(t *testing.T) {
 	test := newPulumiTest(t, sourceDir)
 	suffix := getSuffix()
 	cdkStackName := fmt.Sprintf("import-test-%s", suffix)
-	writer := os.Stdout
+	writer := bytes.NewBuffer([]byte{})
 
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
 	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
@@ -102,8 +103,11 @@ func TestImport(t *testing.T) {
 	assert.Equal(t, 0, len(*creates), "Expected no creates")
 
 	test.Destroy(t)
-	err = runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
-	t.Logf("Destroy error: %v", err)
+	runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+	if err != nil {
+		t.Logf("Destroy error: %v", err)
+	}
+	t.Logf("Logs: %s", writer.String())
 }
 
 func getEnvRegion(t *testing.T) string {
