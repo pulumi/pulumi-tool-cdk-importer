@@ -31,17 +31,17 @@ func runCmd(t *testing.T, writer io.Writer, workspace auto.Workspace, commandPat
 	command := strings.Join(args, " ")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, commandPath, args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
-	runerr := cmd.Run()
+	runerr := cmd.Start()
 	if runerr != nil {
 		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
 	}
+	defer cmd.Wait()
+	defer cancel()
 	return runerr
 }
 
