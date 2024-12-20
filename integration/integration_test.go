@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/pulumi/providertest/pulumitest"
 	"github.com/pulumi/providertest/pulumitest/changesummary"
@@ -30,23 +30,19 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 
 	command := strings.Join(args, " ")
 
-	ctx := context.Background()
-	deadline, ok := t.Deadline()
-	if ok {
-		deadline = deadline.Add(-100 * time.Millisecond)
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, deadline)
-		t.Cleanup(cancel)
-	}
+	output := bytes.NewBuffer([]byte{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	cmd := exec.CommandContext(ctx, commandPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
+	cmd.Stdout = output
+	cmd.Stderr = output
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
 	runerr := cmd.Run()
 	if runerr != nil {
 		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
 	}
+	t.Logf("Output: %s\n", output.String())
 	return runerr
 }
 

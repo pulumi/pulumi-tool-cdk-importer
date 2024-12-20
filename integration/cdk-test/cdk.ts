@@ -12,19 +12,19 @@ class TestStack extends cdk.Stack {
   constructor(scope: Construct, id: string) {
     super(scope, id);
 
-    const core = new Core(this, 'core');
+    // const core = new Core(this, 'core');
     new LambdaApp(this, 'lambda', {
-      alb: core.alb,
+      // alb: core.alb,
     });
 
-    new EcsApp(this, 'ecs', {
-      alb: core.alb,
-      vpc: core.vpc,
-    })
-
-    new cdk.CfnOutput(this, 'Url', {
-      value: core.alb.loadBalancerDnsName,
-    })
+    // new EcsApp(this, 'ecs', {
+    //   alb: core.alb,
+    //   vpc: core.vpc,
+    // })
+    //
+    // new cdk.CfnOutput(this, 'Url', {
+    //   value: core.alb.loadBalancerDnsName,
+    // })
   }
 }
 
