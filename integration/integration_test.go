@@ -33,7 +33,6 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, commandPath, args...)
 	defer cancel()
-	defer cmd.Process.Kill()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.WaitDelay = time.Second * 1
@@ -81,6 +80,11 @@ func TestImport(t *testing.T) {
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
 	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
 
+	defer func() {
+		test.Destroy(t)
+		runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+	}()
+
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
 	err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
@@ -100,12 +104,6 @@ func TestImport(t *testing.T) {
 	summary := changesummary.ChangeSummary(previewResult.ChangeSummary)
 	creates := summary.WhereOpEquals(apitype.OpCreate)
 	assert.Equal(t, 0, len(*creates), "Expected no creates")
-
-	test.Destroy(t)
-	runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
-	if err != nil {
-		t.Logf("Destroy error: %v", err)
-	}
 }
 
 func getEnvRegion(t *testing.T) string {
