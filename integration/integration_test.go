@@ -40,8 +40,12 @@ func runCmd(t *testing.T, writer io.Writer, workspace auto.Workspace, commandPat
 	if runerr != nil {
 		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
 	}
-	defer cmd.Wait()
+	waiterr := cmd.Wait()
+	if waiterr != nil {
+		t.Logf("Invoke Wait '%v' failed: %s\n", command, waiterr)
+	}
 	defer cancel()
+	defer cmd.Process.Kill()
 	return runerr
 }
 
