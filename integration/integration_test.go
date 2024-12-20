@@ -1,7 +1,7 @@
 package integration
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -29,20 +29,20 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	}
 
 	command := strings.Join(args, " ")
+	writer := bufio.NewWriter(os.Stdout)
+	defer writer.Flush()
 
-	output := bytes.NewBuffer([]byte{})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, commandPath, args...)
-	cmd.Stdout = output
-	cmd.Stderr = output
+	cmd.Stdout = writer
+	cmd.Stderr = writer
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
 	runerr := cmd.Run()
 	if runerr != nil {
 		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
 	}
-	t.Logf("Output: %s\n", output.String())
 	return runerr
 }
 

@@ -15,6 +15,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"os"
 
@@ -69,7 +70,9 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 		return err
 	}
 	level := uint(1)
-	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+	writer := bufio.NewWriter(os.Stdout)
+	defer writer.Flush()
+	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(writer), optup.ErrorProgressStreams(writer), optup.DebugLogging(debug.LoggingOptions{
 		LogLevel: &level,
 	}))
 	if err != nil {
