@@ -77,13 +77,6 @@ func TestImport(t *testing.T) {
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
 	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
 
-	defer func() {
-		test.Destroy(t)
-		runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
-		err := writer.Close()
-		require.NoError(t, err)
-	}()
-
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
 	err := runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
@@ -103,6 +96,10 @@ func TestImport(t *testing.T) {
 	summary := changesummary.ChangeSummary(previewResult.ChangeSummary)
 	creates := summary.WhereOpEquals(apitype.OpCreate)
 	assert.Equal(t, 0, len(*creates), "Expected no creates")
+
+	test.Destroy(t)
+	err = runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+	t.Logf("Destroy error: %v", err)
 }
 
 func getEnvRegion(t *testing.T) string {
