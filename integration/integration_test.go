@@ -73,14 +73,15 @@ func TestImport(t *testing.T) {
 	suffix := getSuffix()
 	cdkStackName := fmt.Sprintf("import-test-%s", suffix)
 	writer := os.Stdout
-	defer writer.Close()
 
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
 	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
 
 	defer func() {
-		runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
 		test.Destroy(t)
+		runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+		err := writer.Close()
+		require.NoError(t, err)
 	}()
 
 	t.Logf("Working directory: %s", tmpDir)
