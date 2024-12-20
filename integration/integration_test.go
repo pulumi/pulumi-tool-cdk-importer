@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -77,7 +78,8 @@ func TestImport(t *testing.T) {
 	test := newPulumiTest(t, sourceDir)
 	suffix := getSuffix()
 	cdkStackName := fmt.Sprintf("import-test-%s", suffix)
-	writer := bytes.NewBuffer([]byte{})
+	w := bytes.NewBuffer([]byte{})
+	writer := bufio.NewWriter(w)
 
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
 	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
@@ -85,12 +87,16 @@ func TestImport(t *testing.T) {
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
 	err := runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
+	writer.Flush()
+	t.Logf("Logs: %s", w.String())
 	require.NoError(t, err)
 
 	t.Log("Importing resources")
 
 	// import cdk app
 	err = runImportCommand(t, writer, test.CurrentStack().Workspace(), cdkStackName)
+	writer.Flush()
+	t.Logf("Logs: %s", w.String())
 	require.NoError(t, err)
 
 	t.Log("Import complete")
@@ -104,10 +110,11 @@ func TestImport(t *testing.T) {
 
 	test.Destroy(t)
 	runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+	writer.Flush()
+	t.Logf("Logs: %s", w.String())
 	if err != nil {
 		t.Logf("Destroy error: %v", err)
 	}
-	t.Logf("Logs: %s", writer.String())
 }
 
 func getEnvRegion(t *testing.T) string {
