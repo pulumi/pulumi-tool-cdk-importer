@@ -1,17 +1,15 @@
 package integration
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pulumi/providertest/pulumitest"
 	"github.com/pulumi/providertest/pulumitest/changesummary"
@@ -24,7 +22,7 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-func runCmd(t *testing.T, writer io.Writer, workspace auto.Workspace, commandPath string, args []string) error {
+func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) error {
 	env := os.Environ()
 	for k, v := range workspace.GetEnvVars() {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
@@ -34,25 +32,26 @@ func runCmd(t *testing.T, writer io.Writer, workspace auto.Workspace, commandPat
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, commandPath, args...)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	cmd.Env = env
-	cmd.Dir = workspace.WorkDir()
-	runerr := cmd.Start()
-	if runerr != nil {
-		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
-	}
-	waiterr := cmd.Wait()
-	if waiterr != nil {
-		t.Logf("Invoke Wait '%v' failed: %s\n", command, waiterr)
-	}
 	defer cancel()
 	defer cmd.Process.Kill()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.WaitDelay = time.Second * 1
+	cmd.Env = env
+	cmd.Dir = workspace.WorkDir()
+
+	runerr := cmd.Run()
+	if runerr != nil {
+		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
+		if runerr == exec.ErrWaitDelay {
+			return nil
+		}
+	}
 	return runerr
 }
 
-func runCdkCommand(t *testing.T, writer io.Writer, workspace auto.Workspace, args []string) error {
-	return runCmd(t, writer, workspace, "node_modules/.bin/cdk", args)
+func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) error {
+	return runCmd(t, workspace, "node_modules/.bin/cdk", args)
 }
 
 func skipIfShort(t *testing.T) {
@@ -62,14 +61,14 @@ func skipIfShort(t *testing.T) {
 
 }
 
-func runImportCommand(t *testing.T, writer io.Writer, workspace auto.Workspace, stackName string) error {
+func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) error {
 	binPath, err := filepath.Abs("../bin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	commandPath := filepath.Join(binPath, "pulumi-tool-cdk-importer")
 	args := []string{"-stack", stackName}
-	return runCmd(t, writer, workspace, commandPath, args)
+	return runCmd(t, workspace, commandPath, args)
 }
 
 func TestImport(t *testing.T) {
@@ -78,25 +77,19 @@ func TestImport(t *testing.T) {
 	test := newPulumiTest(t, sourceDir)
 	suffix := getSuffix()
 	cdkStackName := fmt.Sprintf("import-test-%s", suffix)
-	w := bytes.NewBuffer([]byte{})
-	writer := bufio.NewWriter(w)
 
 	tmpDir := test.CurrentStack().Workspace().WorkDir()
 	test.CurrentStack().Workspace().SetEnvVar("CDK_APP_ID_SUFFIX", suffix)
 
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
-	err := runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
-	writer.Flush()
-	t.Logf("Logs: %s", w.String())
+	err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
 	require.NoError(t, err)
 
 	t.Log("Importing resources")
 
 	// import cdk app
-	err = runImportCommand(t, writer, test.CurrentStack().Workspace(), cdkStackName)
-	writer.Flush()
-	t.Logf("Logs: %s", w.String())
+	err = runImportCommand(t, test.CurrentStack().Workspace(), cdkStackName)
 	require.NoError(t, err)
 
 	t.Log("Import complete")
@@ -109,9 +102,7 @@ func TestImport(t *testing.T) {
 	assert.Equal(t, 0, len(*creates), "Expected no creates")
 
 	test.Destroy(t)
-	runCdkCommand(t, writer, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
-	writer.Flush()
-	t.Logf("Logs: %s", w.String())
+	runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
 	if err != nil {
 		t.Logf("Destroy error: %v", err)
 	}
