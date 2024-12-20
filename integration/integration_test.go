@@ -33,8 +33,9 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, commandPath, args...)
 	defer cancel()
-	// cmd.Stdout = os.Stdout
-	// cmd.Stderr = os.Stderr
+
+	// This is required in order to exit even if there are
+	// hanging child processes.
 	cmd.WaitDelay = time.Second * 1
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()

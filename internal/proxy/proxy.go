@@ -16,7 +16,6 @@ package proxy
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"github.com/pulumi/providertest/providers"
@@ -76,7 +75,6 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 	if err != nil {
 		return err
 	}
-	log.New(os.Stdout, "", 0).Printf("\n\n\nImport complete\n\n\n")
 	return nil
 }
 
