@@ -22,7 +22,7 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) error {
+func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []string) ([]byte, error) {
 	env := os.Environ()
 	for k, v := range workspace.GetEnvVars() {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
@@ -33,23 +33,24 @@ func runCmd(t *testing.T, workspace auto.Workspace, commandPath string, args []s
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, commandPath, args...)
 	defer cancel()
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// cmd.Stdout = os.Stdout
+	// cmd.Stderr = os.Stderr
 	cmd.WaitDelay = time.Second * 1
 	cmd.Env = env
 	cmd.Dir = workspace.WorkDir()
 
-	runerr := cmd.Run()
+	runout, runerr := cmd.CombinedOutput()
+	defer cmd.Process.Kill()
 	if runerr != nil {
 		t.Logf("Invoke Start '%v' failed: %s\n", command, runerr)
 		if runerr == exec.ErrWaitDelay {
-			return nil
+			return runout, nil
 		}
 	}
-	return runerr
+	return runout, runerr
 }
 
-func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) error {
+func runCdkCommand(t *testing.T, workspace auto.Workspace, args []string) ([]byte, error) {
 	return runCmd(t, workspace, "node_modules/.bin/cdk", args)
 }
 
@@ -60,7 +61,7 @@ func skipIfShort(t *testing.T) {
 
 }
 
-func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) error {
+func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) ([]byte, error) {
 	binPath, err := filepath.Abs("../bin")
 	if err != nil {
 		t.Fatal(err)
@@ -82,19 +83,23 @@ func TestImport(t *testing.T) {
 
 	defer func() {
 		test.Destroy(t)
-		runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+		out, err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
+		assert.NoError(t, err)
+		t.Logf("CDK destroy output: %s", out)
 	}()
 
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
-	err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
+	out, err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
 	require.NoError(t, err)
+	t.Logf("CDK deploy output: %s", out)
 
 	t.Log("Importing resources")
 
 	// import cdk app
-	err = runImportCommand(t, test.CurrentStack().Workspace(), cdkStackName)
+	out, err = runImportCommand(t, test.CurrentStack().Workspace(), cdkStackName)
 	require.NoError(t, err)
+	t.Logf("Import output: %s", out)
 
 	t.Log("Import complete")
 
