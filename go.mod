@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.20.3
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.43.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
-	github.com/golang/glog v1.2.3
+	github.com/golang/glog v1.2.4
 	github.com/pkg/errors v0.9.1
 	github.com/pulumi/providertest v0.1.5
 	github.com/pulumi/pulumi-aws-native/provider v1.11.0
