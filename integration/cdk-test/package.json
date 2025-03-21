@@ -18,7 +18,7 @@
     "@pulumi/cdk": "1.8.1",
     "@pulumi/docker-build": "0.0.10",
     "@pulumi/pulumi": "3.157.0",
-    "aws-cdk": "^2.173.1",
+    "aws-cdk": "^2.178.2",
     "aws-cdk-lib": "^2.173.1",
     "constructs": "^10.4.2"
   }
