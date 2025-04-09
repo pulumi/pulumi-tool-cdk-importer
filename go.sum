@@ -239,8 +239,8 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 h1:vkHw5I/plNdTr435cARxCW6q9gc0S/Yxz7Mkd38pOb0=
 github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231/go.mod h1:murToZ2N9hNJzewjHBgfFdXhZKjY3z5cYC1VXk+lbFE=
-github.com/pulumi/esc v0.10.0 h1:jzBKzkLVW0mePeanDRfqSQoCJ5yrkux0jIwAkUxpRKE=
-github.com/pulumi/esc v0.10.0/go.mod h1:2Bfa+FWj/xl8CKqRTWbWgDX0SOD4opdQgvYSURTGK2c=
+github.com/pulumi/esc v0.13.0 h1:O2MPR2koScaQ2fXwyer8Q3Dd7z+DCnaDfsgNl5mVNMk=
+github.com/pulumi/esc v0.13.0/go.mod h1:IIQo6W6Uzajt6f1RW4QvNxIRDlbK3TNQysnrwBHNo3U=
 github.com/pulumi/jsschema v0.0.0-20240222154951-2ba83b66ea54 h1:bKq2LqtQOtab1ZuR9eU8ReGfik564A1YCSIt3q1mlkM=
 github.com/pulumi/jsschema v0.0.0-20240222154951-2ba83b66ea54/go.mod h1:nXH0b0s3hX5wMv1UlCz9n/O6832x4dPIVl7t5aonm0Q=
 github.com/pulumi/providertest v0.2.0 h1:sTSwGI+1T6PIETiSLbn3tEZEa90skPcMhRIaIHOeTLk=
@@ -251,8 +251,8 @@ github.com/pulumi/pulumi-go-provider v0.25.0 h1:59Z1ZRcIgGW5YOB7hluZnD6FJvMeLhSL
 github.com/pulumi/pulumi-go-provider v0.25.0/go.mod h1:KXg7CXESL2Tvheq7Kki6ZtiXh2E8QABuNQQ1VjAzIAQ=
 github.com/pulumi/pulumi/pkg/v3 v3.158.0 h1:1918lSY8k/jjBSvsY54E2edwruzNiK3mfWO71VcmiOI=
 github.com/pulumi/pulumi/pkg/v3 v3.158.0/go.mod h1:7kv+/BACCE65VPH2RNowSgFQOL3EQXLlmQGshTX8qJI=
-github.com/pulumi/pulumi/sdk/v3 v3.160.0 h1:OxeATnIEqWyu3KpTeLUmyJdZaSEE6yX7ECvfGhByb9w=
-github.com/pulumi/pulumi/sdk/v3 v3.160.0/go.mod h1:YEbbl0N7eVsgfsL7h5215dDf8GBSe4AnRon7Ya/KIVc=
+github.com/pulumi/pulumi/sdk/v3 v3.161.0 h1:dIoa3r9nEKn1cE/wDgkQzmU9ibMNun+ns8JVwuU7D4g=
+github.com/pulumi/pulumi/sdk/v3 v3.161.0/go.mod h1:GAaHrdv3kWJHbzkFFFflGbTBQXUYu6SF1ZCo+O9jo44=
 github.com/rivo/uniseg v0.1.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
 github.com/rivo/uniseg v0.4.4 h1:8TfxU8dW6PdqD27gjM8MVNuicgxIjxpm4K7x4jp8sis=
