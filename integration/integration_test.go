@@ -85,22 +85,22 @@ func TestImport(t *testing.T) {
 	defer func() {
 		test.Destroy(t)
 		out, err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"destroy", "--require-approval", "never", "--all", "--force"})
-		assert.NoError(t, err)
 		t.Logf("CDK destroy output: %s", out)
+		assert.NoError(t, err)
 	}()
 
 	t.Logf("Working directory: %s", tmpDir)
 	// deploy cdk app
 	out, err := runCdkCommand(t, test.CurrentStack().Workspace(), []string{"deploy", "--require-approval", "never", "--all"})
-	require.NoError(t, err)
 	t.Logf("CDK deploy output: %s", out)
+	require.NoError(t, err)
 
 	t.Log("Importing resources")
 
 	// import cdk app
 	out, err = runImportCommand(t, test.CurrentStack().Workspace(), cdkStackName)
-	require.NoError(t, err)
 	t.Logf("Import output: %s", out)
+	require.NoError(t, err)
 
 	t.Log("Import complete")
 
