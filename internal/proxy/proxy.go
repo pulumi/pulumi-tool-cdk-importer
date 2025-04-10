@@ -30,8 +30,8 @@ const (
 	awsCCApi        = "aws-native"
 	aws             = "aws"
 	docker          = "docker-build"
-	awsVersion      = "6.64.0"
-	awsCCApiVersion = "1.14.0"
+	awsVersion      = "6.76.0"
+	awsCCApiVersion = "1.26.0"
 	dockerVersion   = "0.0.7"
 )
 
