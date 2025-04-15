@@ -16,6 +16,8 @@ package proxy
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"os"
 
 	"github.com/pulumi/providertest/providers"
@@ -49,9 +51,10 @@ type ProxiesConfig struct {
 	CfnStackResources map[common.LogicalResourceID]lookups.CfnStackResource
 }
 
-func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workDir string) error {
+func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lookups.Lookups, workDir string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	logger.Println("Starting up providers...")
 	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir})
 	if err != nil {
 		return err
@@ -61,14 +64,15 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 		return err
 	}
 	stack, err := ws.Stack(ctx)
-	if err != nil {
-		return nil
+	if err != nil || stack == nil {
+		return fmt.Errorf("%w: make sure to select a stack with `pulumi stack select`", err)
 	}
 	s, err := auto.UpsertStackLocalSource(ctx, stack.Name, workDir, auto.EnvVars(envVars))
 	if err != nil {
 		return err
 	}
 	level := uint(1)
+	logger.Println("Importing stack...")
 	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
 		LogLevel: &level,
 	}))
