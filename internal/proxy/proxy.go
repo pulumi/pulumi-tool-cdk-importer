@@ -16,6 +16,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/pulumi/providertest/providers"
@@ -61,8 +62,8 @@ func RunPulumiUpWithProxies(ctx context.Context, lookups *lookups.Lookups, workD
 		return err
 	}
 	stack, err := ws.Stack(ctx)
-	if err != nil {
-		return nil
+	if err != nil || stack == nil {
+		return fmt.Errorf("failed to find a current pulumi stack. Make sure to select a stack with 'pulumi stack select': %w", err)
 	}
 	s, err := auto.UpsertStackLocalSource(ctx, stack.Name, workDir, auto.EnvVars(envVars))
 	if err != nil {
