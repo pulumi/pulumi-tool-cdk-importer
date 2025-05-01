@@ -1,3 +1,4 @@
+permissions: write-all # Equivalent to default permissions plus id-token: write
 on:
   workflow_call:
     inputs:
@@ -8,6 +9,11 @@ on:
 
 env:
   AWS_REGION: us-west-2
+  ESC_ACTION_OIDC_AUTH: true
+  ESC_ACTION_OIDC_ORGANIZATION: pulumi
+  ESC_ACTION_OIDC_REQUESTED_TOKEN_TYPE: urn:pulumi:token-type:access_token:organization
+  ESC_ACTION_ENVIRONMENT: imports/github-secrets
+  ESC_ACTION_EXPORT_ENVIRONMENT_VARIABLES: false
 
 jobs:
   acceptance-tests:
@@ -16,6 +22,9 @@ jobs:
       group: ${{ inputs.folder }}-test-${{ github.sha }}-${{ matrix.index }}
       cancel-in-progress: false
     steps:
+      - name: Fetch secrets from ESC
+        id: esc-secrets
+        uses: pulumi/esc-action@v1
       - name: Checkout Repo
         uses: actions/checkout@v4
       - name: Configure AWS Credentials
@@ -26,7 +35,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           role-duration-seconds: 3600
           role-session-name: pulumi-tool-cdk-importer@githubActions
-          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          role-to-assume: ${{ steps.esc-secrets.outputs.AWS_CI_ROLE_ARN }}
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
