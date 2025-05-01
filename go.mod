@@ -19,7 +19,7 @@ require (
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 )
 
-require github.com/pulumi/pulumi/sdk/v3 v3.166.0
+require github.com/pulumi/pulumi/sdk/v3 v3.167.0
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
