@@ -14,7 +14,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pulumi/providertest v0.3.1
 	github.com/pulumi/pulumi-aws-native/provider v1.11.0
-	github.com/pulumi/pulumi-go-provider v0.26.0
+	github.com/pulumi/pulumi-go-provider v1.0.0-rc1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 )
