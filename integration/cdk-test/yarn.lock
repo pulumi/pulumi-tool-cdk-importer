@@ -567,17 +567,17 @@
   resolved "https://registry.npmjs.org/@protobufjs/utf8/-/utf8-1.1.0.tgz"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@pulumi/aws-native@1.35.0":
-  version "1.35.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/aws-native/-/aws-native-1.35.0.tgz#ffec5c6001d2d362a502d73decc41db2ea35e36c"
-  integrity sha512-lsxxhVYsHBjzL1iKQo9Zs4wI5ZDGjtYErYEOrhBqW1ZbchoZHNWM0rWoebvuafhiFSrFgQunEjaJCyHVzfprUA==
+"@pulumi/aws-native@1.36.0":
+  version "1.36.0"
+  resolved "https://registry.yarnpkg.com/@pulumi/aws-native/-/aws-native-1.36.0.tgz#c3682f4a7901be3aae0329b5ddf79c6e318d7827"
+  integrity sha512-Ej1nCfZOVfmj/uvCrU+pkZvawmOup3ruUI4alLKzV2pwWd9tM8AUmr5nI06iaVATzIR1c85lQ5PLIH/Ti24sSw==
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
-"@pulumi/aws@7.7.0":
-  version "7.7.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/aws/-/aws-7.7.0.tgz#e429c95bba37c099c55a1e5d3e2e571a3a4df954"
-  integrity sha512-YcILX9dVHSWEReRKe9nLCKwH9QTZ2N8GgqQcFbF7aReKMa4wwWeohCkWCL9Y5hEo3ZVXLICxFS1vY8WVmdxEqQ==
+"@pulumi/aws@7.8.0":
+  version "7.8.0"
+  resolved "https://registry.yarnpkg.com/@pulumi/aws/-/aws-7.8.0.tgz#efe465f6f24e21ff7b684c35f242256cac30488e"
+  integrity sha512-OVdg0dZtzO5qZ/erX4aLZ/9U1AKw9LX+79N3RyZEMSkq5KVUOEBugYBw0xlxJV5kkRrxjzSgMb4LknX7v0tZRw==
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
     mime "^2.0.0"
@@ -600,10 +600,10 @@
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
-"@pulumi/pulumi@3.198.0", "@pulumi/pulumi@^3.142.0":
-  version "3.198.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/pulumi/-/pulumi-3.198.0.tgz#0ed5d496a944850c125403bf70f590e8279b019f"
-  integrity sha512-VpyMyIt5Y624VRc6cTXR3Y2nqvpVCQWhSURbTgZKauOmliYvF1OfDyLnlOoTyG4zgVVJBs/ARIuBZwsUwdSQ6g==
+"@pulumi/pulumi@3.201.0", "@pulumi/pulumi@^3.142.0":
+  version "3.201.0"
+  resolved "https://registry.yarnpkg.com/@pulumi/pulumi/-/pulumi-3.201.0.tgz#314c3a107f2b7d15b2ef4351fe5c8f62f9b617bf"
+  integrity sha512-iLg3Z9lCxJ15N/3rfsPPW5J6NdzH4TcM5uz8v6q179C0SOCAMPHGnxovOpZldB5k689jT9alrw80gvL2VprD0g==
   dependencies:
     "@grpc/grpc-js" "^1.10.1"
     "@logdna/tail-file" "^2.0.6"
