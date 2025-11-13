@@ -16,6 +16,22 @@ type CaptureCollector struct {
 	mu      sync.Mutex
 	entries []Capture
 	seen    map[string]struct{}
+	total   int
+	skipped []SkippedCapture
+}
+
+// SkippedCapture holds metadata about resources we could not capture.
+type SkippedCapture struct {
+	Type        string
+	LogicalName string
+	Reason      string
+}
+
+// CaptureSummary summarizes what happened during capture mode.
+type CaptureSummary struct {
+	TotalIntercepts int
+	UniqueResources int
+	Skipped         []SkippedCapture
 }
 
 // NewCaptureCollector constructs an empty collector.
@@ -28,14 +44,25 @@ func (c *CaptureCollector) Append(entry Capture) {
 	if c == nil {
 		return
 	}
-	key := entry.Type + "|" + entry.Name + "|" + entry.LogicalName + "|" + entry.ID
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.total++
+	key := entry.Type + "|" + entry.Name + "|" + entry.LogicalName + "|" + entry.ID
 	if _, ok := c.seen[key]; ok {
 		return
 	}
 	c.seen[key] = struct{}{}
 	c.entries = append(c.entries, entry)
+}
+
+// Skip records a resource that capture mode could not process.
+func (c *CaptureCollector) Skip(skipped SkippedCapture) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.skipped = append(c.skipped, skipped)
 }
 
 // Results returns a copy of the collected entries.
@@ -58,4 +85,20 @@ func (c *CaptureCollector) Count() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.entries)
+}
+
+// Summary produces a snapshot of capture progress for logging.
+func (c *CaptureCollector) Summary() CaptureSummary {
+	if c == nil {
+		return CaptureSummary{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	skipped := make([]SkippedCapture, len(c.skipped))
+	copy(skipped, c.skipped)
+	return CaptureSummary{
+		TotalIntercepts: c.total,
+		UniqueResources: len(c.entries),
+		Skipped:         skipped,
+	}
 }

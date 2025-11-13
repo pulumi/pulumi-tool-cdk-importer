@@ -112,6 +112,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 }
 
 func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string) error {
+	summary := collector.Summary()
 	entries := collector.Results()
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Type == entries[j].Type {
@@ -132,7 +133,16 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	if err := imports.WriteFile(path, file); err != nil {
 		return err
 	}
-	logger.Printf("Capture mode wrote %d resources to %s", len(resources), path)
+	logger.Printf("Capture mode wrote %d resources to %s (intercepted %d create calls)", summary.UniqueResources, path, summary.TotalIntercepts)
+	if deduped := summary.TotalIntercepts - summary.UniqueResources; deduped > 0 {
+		logger.Printf("Deduped %d duplicate captures", deduped)
+	}
+	if len(summary.Skipped) > 0 {
+		logger.Printf("Skipped %d resources during capture:", len(summary.Skipped))
+		for _, skipped := range summary.Skipped {
+			logger.Printf("  - %s (%s): %s", skipped.LogicalName, skipped.Type, skipped.Reason)
+		}
+	}
 	return nil
 }
 

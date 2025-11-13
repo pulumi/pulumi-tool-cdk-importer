@@ -56,6 +56,13 @@ func (i *awsInterceptor) create(
 		fallthrough
 	case "aws:iam/rolePolicyAttachment:RolePolicyAttachment":
 		if i.mode == CaptureImports {
+			if i.collector != nil {
+				i.collector.Skip(SkippedCapture{
+					Type:        resourceType,
+					LogicalName: string(urn.Name()),
+					Reason:      "resource type not supported for capture",
+				})
+			}
 			return nil, fmt.Errorf("resource type %s is not supported in capture mode", resourceType)
 		}
 		glog.V(1).Infof("Resource type %s is not supported for import, creating instead", resourceType)
