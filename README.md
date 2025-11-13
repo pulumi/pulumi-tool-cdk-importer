@@ -16,7 +16,9 @@ pulumi plugin install tool cdk-importer
 
 ``` shell
 ❯ pulumi plugin run cdk-importer -- --help
-Usage of /Users/mjeffryes/.pulumi/plugins/tool-cdk-importer-v0.0.1-alpha.3/pulumi-tool-cdk-importer:
+Usage of pulumi-tool-cdk-importer:
+  -import-file string
+    	Write the Pulumi bulk import file produced from the CloudFormation stack to this path instead of mutating Pulumi state
   -stack string
     	CloudFormation stack name to import
 ```
@@ -29,6 +31,16 @@ To migrate your existing CDK infrastructure to `pulumi-cdk`:
   infrastructure defined by your CDK stack into Pulumi state. This operation is read-only (with the below exceptions) and should not modify any resources.
 
 1. To verify that everything worked as expected, run `pulumi preview`. It should show no changes.
+
+### Generate a bulk import file
+
+If you would rather produce a Pulumi [bulk import](https://www.pulumi.com/docs/iac/guides/migration/import/#bulk-import) spec (e.g., to pair with `pulumi import --file` or `--generate-code`), pass the `--import-file` flag:
+
+```shell
+pulumi plugin run cdk-importer -- -stack my-stack --import-file ./import.json
+```
+
+The resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. Some resources with composite identifiers may show `<PLACEHOLDER>` IDs; fill those in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
 
 ### Unsupported Resources
 

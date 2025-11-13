@@ -148,6 +148,12 @@ func (c *ccapiLookups) findOwnNativeId(
 			}
 			return id, nil
 		}
+	} else if resourceType == "AWS::S3::BucketPolicy" && idPropertyName == "bucket" {
+		if r, ok := c.cfnStackResources[logicalID]; ok {
+			// NOTE! Assuming that PrimaryResourceID matches the PhysicalID.
+			return common.PrimaryResourceID(r.PhysicalID), nil
+		}
+		return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
 	} else {
 		return "", fmt.Errorf("Expected suffix of 'Id', 'Name', or 'Arn'; got %s", idPropertyName)
 	}
