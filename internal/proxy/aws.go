@@ -14,6 +14,8 @@ import (
 
 type awsInterceptor struct {
 	*lookups.Lookups
+	mode      RunMode
+	collector *CaptureCollector
 }
 
 func (i *awsInterceptor) create(
@@ -53,6 +55,9 @@ func (i *awsInterceptor) create(
 	case "aws:iam/policy:Policy":
 		fallthrough
 	case "aws:iam/rolePolicyAttachment:RolePolicyAttachment":
+		if i.mode == CaptureImports {
+			return nil, fmt.Errorf("resource type %s is not supported in capture mode", resourceType)
+		}
 		glog.V(1).Infof("Resource type %s is not supported for import, creating instead", resourceType)
 		return client.Create(ctx, in)
 	}
@@ -76,6 +81,14 @@ func (i *awsInterceptor) create(
 	}
 
 	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", resourceType, string(prim), string(urn))
+	if i.mode == CaptureImports && i.collector != nil {
+		i.collector.Append(Capture{
+			Type:        resourceType,
+			Name:        string(urn.Name()),
+			LogicalName: string(logical),
+			ID:          string(prim),
+		})
+	}
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
 		Id:  string(prim),
 		Urn: string(urn),

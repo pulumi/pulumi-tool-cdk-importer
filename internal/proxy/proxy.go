@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/imports"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
@@ -51,6 +53,7 @@ const (
 type RunOptions struct {
 	Mode           RunMode
 	ImportFilePath string
+	Collector      *CaptureCollector
 }
 
 type pulumiTest struct {
@@ -68,10 +71,17 @@ type ProxiesConfig struct {
 }
 
 func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lookups.Lookups, workDir string, opts RunOptions) error {
+	if opts.Mode == CaptureImports && opts.ImportFilePath == "" {
+		return fmt.Errorf("import file path is required when capturing imports")
+	}
+	collector := opts.Collector
+	if opts.Mode == CaptureImports && collector == nil {
+		collector = NewCaptureCollector()
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger.Println("Starting up providers...")
-	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir})
+	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir}, opts.Mode, collector)
 	if err != nil {
 		return err
 	}
@@ -87,9 +97,6 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	if err != nil {
 		return err
 	}
-	if opts.Mode == CaptureImports {
-		return fmt.Errorf("capture mode is not implemented yet; collector wiring pending")
-	}
 	level := uint(1)
 	logger.Println("Importing stack...")
 	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
@@ -98,6 +105,34 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	if err != nil {
 		return err
 	}
+	if opts.Mode == CaptureImports {
+		return finalizeCapture(logger, collector, opts.ImportFilePath)
+	}
+	return nil
+}
+
+func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string) error {
+	entries := collector.Results()
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Type == entries[j].Type {
+			return entries[i].Name < entries[j].Name
+		}
+		return entries[i].Type < entries[j].Type
+	})
+	resources := make([]imports.Resource, 0, len(entries))
+	for _, entry := range entries {
+		resources = append(resources, imports.Resource{
+			Type:        entry.Type,
+			Name:        entry.Name,
+			ID:          entry.ID,
+			LogicalName: entry.LogicalName,
+		})
+	}
+	file := &imports.File{Resources: resources}
+	if err := imports.WriteFile(path, file); err != nil {
+		return err
+	}
+	logger.Printf("Capture mode wrote %d resources to %s", len(resources), path)
 	return nil
 }
 
@@ -105,11 +140,13 @@ func startProxiedProviders(
 	ctx context.Context,
 	lookups *lookups.Lookups,
 	pt providers.PulumiTest,
+	mode RunMode,
+	collector *CaptureCollector,
 ) (map[string]string, error) {
 	ccapiBinary := providers.DownloadPluginBinaryFactory(awsCCApi, awsCCApiVersion)
-	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(lookups))
+	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(lookups, mode, collector))
 	awsBinary := providers.DownloadPluginBinaryFactory(aws, awsVersion)
-	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(lookups))
+	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(lookups, mode, collector))
 	dockerBinary := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
 	dockerIntercept := providers.ProviderInterceptFactory(ctx, dockerBinary, dockerInterceptors())
 	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
@@ -132,15 +169,15 @@ func dockerInterceptors() providers.ProviderInterceptors {
 	}
 }
 
-func awsInterceptors(lookups *lookups.Lookups) providers.ProviderInterceptors {
-	i := &awsInterceptor{lookups}
+func awsInterceptors(lookups *lookups.Lookups, mode RunMode, collector *CaptureCollector) providers.ProviderInterceptors {
+	i := &awsInterceptor{Lookups: lookups, mode: mode, collector: collector}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}
 }
 
-func awsCCApiInterceptors(lookups *lookups.Lookups) providers.ProviderInterceptors {
-	i := &awsCCApiInterceptor{lookups}
+func awsCCApiInterceptors(lookups *lookups.Lookups, mode RunMode, collector *CaptureCollector) providers.ProviderInterceptors {
+	i := &awsCCApiInterceptor{Lookups: lookups, mode: mode, collector: collector}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}

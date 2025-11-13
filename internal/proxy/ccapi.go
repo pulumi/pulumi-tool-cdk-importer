@@ -16,6 +16,8 @@ import (
 
 type awsCCApiInterceptor struct {
 	*lookups.Lookups
+	mode      RunMode
+	collector *CaptureCollector
 }
 
 func (i *awsCCApiInterceptor) create(
@@ -64,6 +66,14 @@ func (i *awsCCApiInterceptor) create(
 		return nil, err
 	}
 	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", urn.Type().String(), string(prim), string(urn))
+	if i.mode == CaptureImports && i.collector != nil {
+		i.collector.Append(Capture{
+			Type:        string(urn.Type()),
+			Name:        string(urn.Name()),
+			LogicalName: string(logical),
+			ID:          string(prim),
+		})
+	}
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
 		Id:  string(prim),
 		Urn: string(urn),
