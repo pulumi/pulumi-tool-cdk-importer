@@ -29,11 +29,19 @@ func main() {
 	logger := log.New(os.Stdout, "[cdk-importer] ", log.Ltime|log.Lshortfile)
 	ctx := context.Background()
 	var stackRef = flag.String("stack", "", "CloudFormation stack name")
+	var importFile = flag.String("import-file", "", "If set, capture resource IDs into this Pulumi bulk import file path")
 	flag.Parse()
 	if stackRef == nil || *stackRef == "" {
 		log.Fatalf("stack is required")
 	}
 	stackName := common.StackName(*stackRef)
+
+	mode := proxy.RunPulumi
+	var importPath string
+	if importFile != nil && *importFile != "" {
+		mode = proxy.CaptureImports
+		importPath = *importFile
+	}
 
 	cc, err := lookups.NewDefaultLookups(ctx)
 	if err != nil {
@@ -45,7 +53,12 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, "."); err != nil {
+	options := proxy.RunOptions{
+		Mode:           mode,
+		ImportFilePath: importPath,
+	}
+
+	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options); err != nil {
 		log.Fatal(err)
 	}
 }

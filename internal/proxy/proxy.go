@@ -37,6 +37,22 @@ const (
 	dockerVersion   = "0.0.7"
 )
 
+// RunMode determines how the proxied Pulumi run should behave.
+type RunMode int
+
+const (
+	// RunPulumi executes a normal `pulumi up` with intercepted providers.
+	RunPulumi RunMode = iota
+	// CaptureImports will eventually capture primary IDs instead of mutating resources.
+	CaptureImports
+)
+
+// RunOptions surfaces CLI decisions (mode, import path) into the proxy layer.
+type RunOptions struct {
+	Mode           RunMode
+	ImportFilePath string
+}
+
 type pulumiTest struct {
 	source string
 }
@@ -51,7 +67,7 @@ type ProxiesConfig struct {
 	CfnStackResources map[common.LogicalResourceID]lookups.CfnStackResource
 }
 
-func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lookups.Lookups, workDir string) error {
+func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lookups.Lookups, workDir string, opts RunOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger.Println("Starting up providers...")
@@ -70,6 +86,9 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	s, err := auto.UpsertStackLocalSource(ctx, stack.Name, workDir, auto.EnvVars(envVars))
 	if err != nil {
 		return err
+	}
+	if opts.Mode == CaptureImports {
+		return fmt.Errorf("capture mode is not implemented yet; collector wiring pending")
 	}
 	level := uint(1)
 	logger.Println("Importing stack...")
