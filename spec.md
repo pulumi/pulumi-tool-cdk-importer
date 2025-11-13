@@ -25,9 +25,9 @@ This specification describes how to evolve the current importer so that it can e
 - [x] **Interceptor behavior toggles**
   - ✅ Both AWS Classic + CCAPI interceptors take the collector + mode, compute IDs, append captures, short-circuit unsupported resource types, and only invoke real `Create` when running in `RunPulumi` mode.
 
-- [ ] **Error handling & logging**
+- [x] **Error handling & logging**
   - ✅ Unsupported resource types now bubble an error instead of silently creating them when capture mode is active.
-  - ⏳ Need richer summary logging (counts, skipped resources, placeholders) once the collector feeds more metadata.
+  - ✅ Capture finalization summarizes intercepted vs. deduped resources and enumerates skipped entries with reasons.
 
 - [x] **File writer reuse**
   - ✅ Capture finalization reuses `internal/imports` to emit a `pulumi import --file` compatible JSON document (confirmed IDs only).
