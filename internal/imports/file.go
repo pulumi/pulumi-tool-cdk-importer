@@ -19,15 +19,33 @@ const placeholderID = "<PLACEHOLDER>"
 
 // File models the structure expected by `pulumi import --file`.
 type File struct {
+	// A mapping from in-language variable names to URNs. Used when generating references to parents and providers
+	NameTable map[string]string `json:"nameTable"`
+	// The list of resources to import
 	Resources []Resource `json:"resources"`
 }
 
 // Resource represents a single resource import entry.
 type Resource struct {
-	Type        string `json:"type"`
-	Name        string `json:"name"`
-	ID          string `json:"id,omitempty"`
+	// The type of the corresponding Pulumi resource
+	Type string `json:"type"`
+	// The name of the resource
+	Name string `json:"name"`
+	// The provider determined ID for this resource type. This is required unless `Component` is `true`
+	ID string `json:"id,omitempty"`
+	// The logical name of the resource. The original `Name` property is then used just for codegen
+	// purposes (i.e. the source name). If either property is not set, then the other field is used to fill it in
 	LogicalName string `json:"logicalName,omitempty"`
+	// The list of properties to include in the generated code. If unspecified all properties will be included
+	Properties []string `json:"properties,omitempty"`
+	// This import should create an empty component resource. `id` must not be set if this is `true`
+	Component bool `json:"component,omitempty"`
+	// The version of the provider to use
+	Version string `json:"version,omitempty"`
+	// The name of the parent resource. The mentioned name must be present in the `NameTable`
+	Parent string `json:"parent,omitempty"`
+	// The name of the provider resource. The mentioned name must be present in the `NameTable`
+	Provider string `json:"provider,omitempty"`
 }
 
 // Summary captures high-level details about what was emitted.

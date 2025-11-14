@@ -31,11 +31,12 @@ import (
 )
 
 const (
-	awsCCApi        = "aws-native"
-	aws             = "aws"
-	docker          = "docker-build"
-	awsVersion      = "6.76.0"
-	awsCCApiVersion = "1.26.0"
+	awsCCApi = "aws-native"
+	aws      = "aws"
+	docker   = "docker-build"
+	// TODO: create workflow to update this
+	awsVersion      = "7.11.0"
+	awsCCApiVersion = "1.38.0"
 	dockerVersion   = "0.0.7"
 )
 

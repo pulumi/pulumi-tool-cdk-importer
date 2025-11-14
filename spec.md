@@ -1,48 +1,93 @@
 # Import-File Capture Mode (Option A)
 
-This specification describes how to evolve the current importer so that it can emit a Pulumi bulk-import file **while still running through the proxied providers**. The key idea is to keep the existing interception pipeline (which already has every bit of information we need to derive primary IDs) but switch the behavior so we _record_ those IDs instead of issuing real `Create` RPCs.
+This document tracks the current plan for evolving capture mode so it can build
+rich Pulumi import files without mutating user stacks.
 
-## High-Level Flow
+## Goals
 
-1. Users run `pulumi plugin run cdk-importer -- -stack <name> --import-file <path>`.
-2. The CLI still calls `RunPulumiUpWithProxies`.
-3. Interceptors compute primary IDs, issue `Read` calls to gather properties, but skip the real `Create`.
-4. Every intercepted resource emits an entry (`type`, `name`, `logicalName`, `id`) into an in-memory collector.
-5. After `s.Up()` completes, the collector serializes entries into `<path>` using the existing JSON writer.
+1. Allow operators to suppress creation of the “special” resources that do not
+   map cleanly to CloudFormation logical IDs by introducing a `-skip-create`
+   flag (implied whenever `-import-file` is used).
+2. When `-import-file` is passed, run against a local file backend and emit an
+   import file whose entries contain the newer metadata fields (`NameTable`,
+   `Parent`, `Provider`, `Properties`, etc.). After the run, delete the
+   temporary backend unless instructed otherwise.
+3. Keep the existing capture collector so we can continue enriching import file
+   entries with metadata that is not present in Pulumi state. Prioritize state
+   data for wiring (names, parents, providers) and capture data for custom
+   `Properties` hints.
 
-## Detailed Tasks
+## Detailed Plan (with Checkboxes)
 
-- [x] **CLI plumbing**
-  - ✅ Mode enum + `--import-file` wiring is in `main.go` and always flows through `RunPulumiUpWithProxies`.
+### CLI and Flag Plumbing
 
-- [x] **Collector data structure**
-  - ✅ `Capture` + mutex-backed `CaptureCollector` with `Results()`/`Count()` helpers live in `internal/proxy/capture.go`.
+- [ ] Add `-skip-create` bool flag. Normal runs default to `false`; capture
+      mode forces it to `true`.
+- [ ] Add `-keep-import-state` bool flag (default `false`). When set, capture
+      mode leaves the local backend files intact after exiting.
+- [ ] Add `-local-stack-file` string flag so users can re-use a specific local
+      backend file instead of a throwaway temp dir.
+- [ ] Update `main.go` to enforce `-stack` and propagate the new options through
+      `proxy.RunOptions`.
 
-- [x] **Proxy wiring**
-  - ✅ `RunPulumiUpWithProxies` now accepts `RunOptions` (mode, path, collector), starts providers with those knobs, and writes the JSON file via `imports.WriteFile` after `s.Up()` in capture mode.
-  - ⚠️ Stack-selection behavior matches the previous code path; still need to skip the Pulumi run entirely if no stack is selected (follow-up?).
+### Stack/Backend Lifecycle for `-import-file`
 
-- [x] **Interceptor behavior toggles**
-  - ✅ Both AWS Classic + CCAPI interceptors take the collector + mode, compute IDs, append captures, short-circuit unsupported resource types, and only invoke real `Create` when running in `RunPulumi` mode.
+- [ ] When `-import-file` is not specified, continue using the currently
+      selected stack (no backend changes).
+- [ ] When `-import-file` **is** specified:
+  - [ ] Create (or re-use) a local backend rooted at the path specified via
+        `-local-stack-file` (or a temp dir if unspecified).
+  - [ ] Create a deterministic stack name (e.g., `capture-<stackRef>` or
+        timestamp-based) within that backend using `auto.UpsertStackLocalSource`.
+  - [ ] After `Up()` completes, call `stack.Export()` to obtain state for import
+        file generation.
+  - [ ] Delete the stack and backend directory unless `-keep-import-state` is
+        set.
 
-- [x] **Error handling & logging**
-  - ✅ Unsupported resource types now bubble an error instead of silently creating them when capture mode is active.
-  - ✅ Capture finalization summarizes intercepted vs. deduped resources and enumerates skipped entries with reasons.
+### Skip-Create Semantics
 
-- [x] **File writer reuse**
-  - ✅ Capture finalization reuses `internal/imports` to emit a `pulumi import --file` compatible JSON document (confirmed IDs only).
+- [ ] Extend `proxy.RunOptions` with a `SkipCreate` boolean so the interceptors
+      know whether to bypass provider `Create` calls.
+- [ ] Update AWS interceptors to short-circuit the special resource types when
+      `SkipCreate` is true: log the skip, record a `SkippedCapture`, and return a
+      stub `CreateResponse` so the Pulumi engine considers the step successful.
+- [ ] Ensure normal runs (`SkipCreate` false) continue to invoke the real
+      provider `Create` for those types to preserve current behavior.
 
-- [ ] **Tests**
-  - ✅ Collector has unit coverage for dedupe + concurrency.
-  - ⏳ Add proxy-level tests with fake providers to assert `Create` isn’t invoked in capture mode.
-  - ⏳ Extend integration harness to cover capture mode (non-short only; compare JSON to golden file).
+### Import File Generation Enhancements
 
-- [ ] **Docs**
-  - ⏳ Update `README.md`/`AGENTS.md` with capture-mode instructions and stack-selection requirements.
+- [ ] Introduce a function that merges data from two sources: (a) Pulumi state
+      (exported deployment) and (b) the capture collector. State provides the
+      authoritative resource set, URNs, parents/providers, and version info;
+      capture metadata supplies property subsets or other hints.
+- [ ] Populate the new `NameTable` field by walking the exported deployment and
+      mapping variable names to URNs.
+- [ ] For each AWS resource in state:
+  - [ ] Fill `Type`, `Name`, `LogicalName`, `Parent`, `Provider`, `Component`,
+        and `Version` from state/metadata.
+  - [ ] Attach any `Properties` subset recorded via capture (if present).
+  - [ ] Skip non-AWS resources or Pulumi bookkeeping entries.
+- [ ] Continue calling `imports.WriteFile` to persist the enriched JSON to the
+      user-supplied path.
 
-## Open Questions
+### Testing & Docs
 
-- How do we want to handle resources that currently fall back to `<PLACEHOLDER>` (e.g., CCAPI list failures)? We may still need a warning section in the output file.
-- Should we dedupe component resources (URNs marked as components) or include them for completeness?
+- [ ] Add unit tests that cover the new flag plumbing (parsing interactions,
+      `-import-file` implying `-skip-create`, etc.).
+- [ ] Add interceptor tests verifying that `SkipCreate` suppresses real provider
+      calls yet still logs/skips entries.
+- [ ] Extend existing capture-mode tests to exercise the backend export path
+      and confirm the emitted JSON includes the new metadata fields.
+- [ ] Update `README.md` (and AGENTS.md if needed) to document the new flags,
+      the optional persistent local stack file, and expectations for cleaning up
+      temporary state.
 
-Document any decisions in this file so future sessions can adjust the checklist.
+## Open Questions / Follow-Ups
+
+- Should we expose a knob for choosing the temporary stack name (useful in CI)?
+- How should we surface skipped resources back to users—stdout log vs. summary
+  block vs. both?
+- Do we need to store additional metadata (e.g., ID shape hints) in the capture
+  collector now, or can that wait until the schema consumers demand it?
+
+Update this checklist as tasks land so future passes can see what remains.
