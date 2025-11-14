@@ -76,6 +76,7 @@ func main() {
 		SkipCreate:      skipCreateMode,
 		KeepImportState: keepState,
 		LocalStackFile:  localStack,
+		StackName:       string(stackName),
 	}
 
 	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options); err != nil {

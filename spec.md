@@ -21,37 +21,37 @@ rich Pulumi import files without mutating user stacks.
 
 ### CLI and Flag Plumbing
 
-- [ ] Add `-skip-create` bool flag. Normal runs default to `false`; capture
+- [x] Add `-skip-create` bool flag. Normal runs default to `false`; capture
       mode forces it to `true`.
-- [ ] Add `-keep-import-state` bool flag (default `false`). When set, capture
+- [x] Add `-keep-import-state` bool flag (default `false`). When set, capture
       mode leaves the local backend files intact after exiting.
-- [ ] Add `-local-stack-file` string flag so users can re-use a specific local
+- [x] Add `-local-stack-file` string flag so users can re-use a specific local
       backend file instead of a throwaway temp dir.
-- [ ] Update `main.go` to enforce `-stack` and propagate the new options through
+- [x] Update `main.go` to enforce `-stack` and propagate the new options through
       `proxy.RunOptions`.
 
 ### Stack/Backend Lifecycle for `-import-file`
 
-- [ ] When `-import-file` is not specified, continue using the currently
+- [x] When `-import-file` is not specified, continue using the currently
       selected stack (no backend changes).
 - [ ] When `-import-file` **is** specified:
-  - [ ] Create (or re-use) a local backend rooted at the path specified via
+  - [x] Create (or re-use) a local backend rooted at the path specified via
         `-local-stack-file` (or a temp dir if unspecified).
-  - [ ] Create a deterministic stack name (e.g., `capture-<stackRef>` or
+  - [x] Create a deterministic stack name (e.g., `capture-<stackRef>` or
         timestamp-based) within that backend using `auto.UpsertStackLocalSource`.
-  - [ ] After `Up()` completes, call `stack.Export()` to obtain state for import
+  - [x] After `Up()` completes, call `stack.Export()` to obtain state for import
         file generation.
-  - [ ] Delete the stack and backend directory unless `-keep-import-state` is
+  - [x] Delete the stack and backend directory unless `-keep-import-state` is
         set.
 
 ### Skip-Create Semantics
 
-- [ ] Extend `proxy.RunOptions` with a `SkipCreate` boolean so the interceptors
+- [x] Extend `proxy.RunOptions` with a `SkipCreate` boolean so the interceptors
       know whether to bypass provider `Create` calls.
-- [ ] Update AWS interceptors to short-circuit the special resource types when
+- [x] Update AWS interceptors to short-circuit the special resource types when
       `SkipCreate` is true: log the skip, record a `SkippedCapture`, and return a
       stub `CreateResponse` so the Pulumi engine considers the step successful.
-- [ ] Ensure normal runs (`SkipCreate` false) continue to invoke the real
+- [x] Ensure normal runs (`SkipCreate` false) continue to invoke the real
       provider `Create` for those types to preserve current behavior.
 
 ### Import File Generation Enhancements

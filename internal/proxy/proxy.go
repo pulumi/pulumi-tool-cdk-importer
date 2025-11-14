@@ -19,7 +19,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/pulumi/providertest/providers"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
@@ -27,7 +30,9 @@ import (
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/optremove"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 )
 
 const (
@@ -35,9 +40,10 @@ const (
 	aws      = "aws"
 	docker   = "docker-build"
 	// TODO: create workflow to update this
-	awsVersion      = "7.11.0"
-	awsCCApiVersion = "1.38.0"
-	dockerVersion   = "0.0.7"
+	awsVersion        = "7.11.0"
+	awsCCApiVersion   = "1.38.0"
+	dockerVersion     = "0.0.7"
+	capturePassphrase = "cdk-importer-local"
 )
 
 // RunMode determines how the proxied Pulumi run should behave.
@@ -58,6 +64,7 @@ type RunOptions struct {
 	SkipCreate      bool
 	KeepImportState bool
 	LocalStackFile  string
+	StackName       string
 }
 
 type pulumiTest struct {
@@ -85,37 +92,166 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger.Println("Starting up providers...")
-	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir}, opts.Mode, collector)
+	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir}, opts, collector)
 	if err != nil {
 		return err
 	}
-	ws, err := auto.NewLocalWorkspace(ctx, auto.WorkDir(workDir))
+	var stack auto.Stack
+	var cleanup func()
+	if opts.Mode == CaptureImports {
+		stack, cleanup, err = prepareCaptureStack(ctx, logger, workDir, envVars, opts)
+	} else {
+		stack, err = prepareSelectedStack(ctx, workDir, envVars)
+	}
 	if err != nil {
 		return err
 	}
-	stack, err := ws.Stack(ctx)
-	if err != nil || stack == nil {
-		return fmt.Errorf("%w: make sure to select a stack with `pulumi stack select`", err)
-	}
-	s, err := auto.UpsertStackLocalSource(ctx, stack.Name, workDir, auto.EnvVars(envVars))
-	if err != nil {
-		return err
+	if cleanup != nil {
+		defer cleanup()
 	}
 	level := uint(1)
 	logger.Println("Importing stack...")
-	_, err = s.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+	_, err = stack.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
 		LogLevel: &level,
 	}))
 	if err != nil {
 		return err
 	}
 	if opts.Mode == CaptureImports {
-		return finalizeCapture(logger, collector, opts.ImportFilePath)
+		state, err := stack.Export(ctx)
+		if err != nil {
+			return err
+		}
+		return finalizeCapture(logger, collector, opts.ImportFilePath, state)
 	}
 	return nil
 }
 
-func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string) error {
+func prepareSelectedStack(ctx context.Context, workDir string, envVars map[string]string) (auto.Stack, error) {
+	var stack auto.Stack
+	ws, err := auto.NewLocalWorkspace(ctx, auto.WorkDir(workDir), auto.EnvVars(envVars))
+	if err != nil {
+		return stack, err
+	}
+	summary, err := ws.Stack(ctx)
+	if err != nil || summary == nil {
+		return stack, fmt.Errorf("%w: make sure to select a stack with `pulumi stack select`", err)
+	}
+	return auto.UpsertStackLocalSource(ctx, summary.Name, workDir, auto.EnvVars(envVars))
+}
+
+func prepareCaptureStack(ctx context.Context, logger *log.Logger, workDir string, envVars map[string]string, opts RunOptions) (auto.Stack, func(), error) {
+	var stack auto.Stack
+	backendDir, stackName, createdTemp, err := resolveCaptureBackend(opts)
+	if err != nil {
+		return stack, nil, err
+	}
+	captureEnv := cloneEnv(envVars)
+	captureEnv["PULUMI_BACKEND_URL"] = fmt.Sprintf("file://%s", backendDir)
+	if _, ok := captureEnv["PULUMI_CONFIG_PASSPHRASE"]; !ok {
+		captureEnv["PULUMI_CONFIG_PASSPHRASE"] = capturePassphrase
+	}
+	logger.Printf("Using capture stack %q with backend %s", stackName, backendDir)
+	stack, err = auto.UpsertStackLocalSource(ctx, stackName, workDir, auto.EnvVars(captureEnv))
+	if err != nil {
+		if createdTemp {
+			_ = os.RemoveAll(backendDir)
+		}
+		return stack, nil, err
+	}
+	cleanup := func() {
+		if opts.LocalStackFile != "" || opts.KeepImportState {
+			return
+		}
+		if err := stack.Workspace().RemoveStack(ctx, stack.Name(), optremove.Force()); err != nil {
+			logger.Printf("failed to remove capture stack %s: %v", stack.Name(), err)
+		}
+		if createdTemp {
+			if err := os.RemoveAll(backendDir); err != nil {
+				logger.Printf("failed to remove capture backend %s: %v", backendDir, err)
+			}
+		}
+	}
+	return stack, cleanup, nil
+}
+
+func resolveCaptureBackend(opts RunOptions) (string, string, bool, error) {
+	stackName := deriveCaptureStackName(opts.StackName, opts.LocalStackFile)
+	if stackName == "" {
+		stackName = fmt.Sprintf("capture-%d", time.Now().Unix())
+	}
+	if opts.LocalStackFile != "" {
+		abs, err := filepath.Abs(opts.LocalStackFile)
+		if err != nil {
+			return "", "", false, err
+		}
+		dir := filepath.Dir(abs)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", "", false, err
+		}
+		return dir, stackName, false, nil
+	}
+	dir, err := os.MkdirTemp("", "pulumi-capture-")
+	if err != nil {
+		return "", "", false, err
+	}
+	return dir, stackName, true, nil
+}
+
+func deriveCaptureStackName(stackRef, stackFile string) string {
+	if stackFile != "" {
+		base := strings.TrimSuffix(filepath.Base(stackFile), filepath.Ext(stackFile))
+		if sanitized := sanitizeStackComponent(base); sanitized != "" {
+			return sanitized
+		}
+	}
+	if stackRef != "" {
+		if sanitized := sanitizeStackComponent(stackRef); sanitized != "" {
+			return fmt.Sprintf("capture-%s", sanitized)
+		}
+	}
+	return ""
+}
+
+func sanitizeStackComponent(value string) string {
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	return strings.Trim(b.String(), "-. ")
+}
+
+func cloneEnv(env map[string]string) map[string]string {
+	if env == nil {
+		return map[string]string{}
+	}
+	dup := make(map[string]string, len(env))
+	for k, v := range env {
+		dup[k] = v
+	}
+	return dup
+}
+
+func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment) error {
+	if len(deployment.Deployment) == 0 {
+		logger.Println("Exported stack deployment is empty; capture file will only include intercepted resources")
+	} else {
+		logger.Printf("Exported stack deployment contains %d bytes of state", len(deployment.Deployment))
+	}
 	summary := collector.Summary()
 	entries := collector.Results()
 	sort.Slice(entries, func(i, j int) bool {
@@ -154,13 +290,13 @@ func startProxiedProviders(
 	ctx context.Context,
 	lookups *lookups.Lookups,
 	pt providers.PulumiTest,
-	mode RunMode,
+	opts RunOptions,
 	collector *CaptureCollector,
 ) (map[string]string, error) {
 	ccapiBinary := providers.DownloadPluginBinaryFactory(awsCCApi, awsCCApiVersion)
-	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(lookups, mode, collector))
+	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(lookups, opts, collector))
 	awsBinary := providers.DownloadPluginBinaryFactory(aws, awsVersion)
-	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(lookups, mode, collector))
+	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(lookups, opts, collector))
 	dockerBinary := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
 	dockerIntercept := providers.ProviderInterceptFactory(ctx, dockerBinary, dockerInterceptors())
 	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
@@ -183,15 +319,15 @@ func dockerInterceptors() providers.ProviderInterceptors {
 	}
 }
 
-func awsInterceptors(lookups *lookups.Lookups, mode RunMode, collector *CaptureCollector) providers.ProviderInterceptors {
-	i := &awsInterceptor{Lookups: lookups, mode: mode, collector: collector}
+func awsInterceptors(lookups *lookups.Lookups, opts RunOptions, collector *CaptureCollector) providers.ProviderInterceptors {
+	i := &awsInterceptor{Lookups: lookups, mode: opts.Mode, collector: collector, skipCreate: opts.SkipCreate}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}
 }
 
-func awsCCApiInterceptors(lookups *lookups.Lookups, mode RunMode, collector *CaptureCollector) providers.ProviderInterceptors {
-	i := &awsCCApiInterceptor{Lookups: lookups, mode: mode, collector: collector}
+func awsCCApiInterceptors(lookups *lookups.Lookups, opts RunOptions, collector *CaptureCollector) providers.ProviderInterceptors {
+	i := &awsCCApiInterceptor{Lookups: lookups, mode: opts.Mode, collector: collector}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}

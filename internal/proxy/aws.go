@@ -14,8 +14,9 @@ import (
 
 type awsInterceptor struct {
 	*lookups.Lookups
-	mode      RunMode
-	collector *CaptureCollector
+	mode       RunMode
+	skipCreate bool
+	collector  *CaptureCollector
 }
 
 func (i *awsInterceptor) create(
@@ -23,7 +24,6 @@ func (i *awsInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
-	c := lookups.NewAwsLookups(i.CfnStackResources, i.Region, i.Account)
 	urn, err := resource.ParseURN(in.GetUrn())
 	if err != nil {
 		return nil, err
@@ -33,28 +33,19 @@ func (i *awsInterceptor) create(
 	// These resources are only mapped to classic resources in the synthesizer so these
 	// resources won't be imported
 	switch resourceType {
-	case "aws:s3/bucketObjectv2:BucketObjectv2":
-		fallthrough
-	case "aws:s3/bucketV2:BucketV2":
-		fallthrough
-	case "aws:s3/bucketLifecycleConfigurationV2:BucketLifecycleConfigurationV2":
-		fallthrough
-	case "aws:s3/bucketServerSideEncryptionConfigurationV2:BucketServerSideEncryptionConfigurationV2":
-		fallthrough
-	case "aws:s3/bucketPolicy:BucketPolicy":
-		fallthrough
-	case "aws:s3/bucketVersioningV2:BucketVersioningV2":
-		fallthrough
-	case "aws:ecr/repository:Repository":
-		fallthrough
-	case "aws:ecr/lifecyclePolicy:LifecyclePolicy":
-		fallthrough
-	// These resources are incorrectly mapped. In CDK they are inline policies,
-	// but they are mapped to actual policy resources so they can't be imported.
-	// Just create them as new resources
-	case "aws:iam/policy:Policy":
-		fallthrough
-	case "aws:iam/rolePolicyAttachment:RolePolicyAttachment":
+	case "aws:s3/bucketObjectv2:BucketObjectv2",
+		"aws:s3/bucketV2:BucketV2",
+		"aws:s3/bucketLifecycleConfigurationV2:BucketLifecycleConfigurationV2",
+		"aws:s3/bucketServerSideEncryptionConfigurationV2:BucketServerSideEncryptionConfigurationV2",
+		"aws:s3/bucketPolicy:BucketPolicy",
+		"aws:s3/bucketVersioningV2:BucketVersioningV2",
+		"aws:ecr/repository:Repository",
+		"aws:ecr/lifecyclePolicy:LifecyclePolicy",
+		"aws:iam/policy:Policy",
+		"aws:iam/rolePolicyAttachment:RolePolicyAttachment":
+		if i.skipCreate {
+			return i.stubSkippedCreate(resourceType, urn, in)
+		}
 		if i.mode == CaptureImports {
 			if i.collector != nil {
 				i.collector.Skip(SkippedCapture{
@@ -68,6 +59,7 @@ func (i *awsInterceptor) create(
 		glog.V(1).Infof("Resource type %s is not supported for import, creating instead", resourceType)
 		return client.Create(ctx, in)
 	}
+	c := lookups.NewAwsLookups(i.CfnStackResources, i.Region, i.Account)
 	label := fmt.Sprintf("%s.Create(%s)", "aws-proxy", urn)
 	inputs, err := plugin.UnmarshalProperties(in.GetProperties(), plugin.MarshalOptions{
 		Label:        fmt.Sprintf("%s.properties", label),
@@ -106,5 +98,21 @@ func (i *awsInterceptor) create(
 	return &pulumirpc.CreateResponse{
 		Id:         rresp.Id,
 		Properties: rresp.Properties,
+	}, nil
+}
+
+func (i *awsInterceptor) stubSkippedCreate(resourceType string, urn resource.URN, req *pulumirpc.CreateRequest) (*pulumirpc.CreateResponse, error) {
+	glog.V(1).Infof("Skipping creation of %s (%s) due to skip-create flag", string(urn.Name()), resourceType)
+	if i.collector != nil {
+		i.collector.Skip(SkippedCapture{
+			Type:        resourceType,
+			LogicalName: string(urn.Name()),
+			Reason:      "resource skipped via -skip-create",
+		})
+	}
+	stubID := fmt.Sprintf("skip-%s", string(urn.Name()))
+	return &pulumirpc.CreateResponse{
+		Id:         stubID,
+		Properties: req.GetProperties(),
 	}, nil
 }
