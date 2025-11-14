@@ -20,7 +20,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -252,28 +251,35 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	} else {
 		logger.Printf("Exported stack deployment contains %d bytes of state", len(deployment.Deployment))
 	}
-	summary := collector.Summary()
-	entries := collector.Results()
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].Type == entries[j].Type {
-			return entries[i].Name < entries[j].Name
-		}
-		return entries[i].Type < entries[j].Type
-	})
-	resources := make([]imports.Resource, 0, len(entries))
+	summary := CaptureSummary{}
+	entries := make([]Capture, 0)
+	if collector != nil {
+		summary = collector.Summary()
+		entries = collector.Results()
+	}
+	captures := make([]imports.CaptureMetadata, 0, len(entries))
 	for _, entry := range entries {
-		resources = append(resources, imports.Resource{
+		captures = append(captures, imports.CaptureMetadata{
 			Type:        entry.Type,
 			Name:        entry.Name,
-			ID:          entry.ID,
 			LogicalName: entry.LogicalName,
+			ID:          entry.ID,
+			Properties:  append([]string(nil), entry.Properties...),
 		})
 	}
-	file := &imports.File{Resources: resources}
+	file, err := imports.BuildFileFromDeployment(deployment, captures)
+	if err != nil {
+		return err
+	}
 	if err := imports.WriteFile(path, file); err != nil {
 		return err
 	}
-	logger.Printf("Capture mode wrote %d resources to %s (intercepted %d create calls)", summary.UniqueResources, path, summary.TotalIntercepts)
+	logger.Printf(
+		"Capture mode wrote %d resources to %s (intercepted %d create calls)",
+		len(file.Resources),
+		path,
+		summary.TotalIntercepts,
+	)
 	if deduped := summary.TotalIntercepts - summary.UniqueResources; deduped > 0 {
 		logger.Printf("Deduped %d duplicate captures", deduped)
 	}

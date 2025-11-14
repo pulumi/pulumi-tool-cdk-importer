@@ -19,6 +19,12 @@ pulumi plugin install tool cdk-importer
 Usage of pulumi-tool-cdk-importer:
   -import-file string
     	Write the Pulumi bulk import file produced from the CloudFormation stack to this path instead of mutating Pulumi state
+  -keep-import-state
+    	Retain the temporary local backend used when generating an import file (defaults to removing it)
+  -local-stack-file string
+    	Optional path to a local backend file to reuse while generating import files
+  -skip-create
+    	Skip creating special CDK asset helper resources (implied when -import-file is provided)
   -stack string
     	CloudFormation stack name to import
 ```
@@ -40,7 +46,19 @@ If you would rather produce a Pulumi [bulk import](https://www.pulumi.com/docs/i
 pulumi plugin run cdk-importer -- -stack my-stack --import-file ./import.json
 ```
 
+When `-import-file` is supplied, the tool spins up a throwaway local backend, runs against that stack without mutating your real state, and exports the results into an enriched import file. The output includes:
+
+- `nameTable` entries for every Pulumi resource, which lets `pulumi import --file` wire parents and providers correctly.
+- Full AWS resource metadata (type, logical name, provider reference, component bit, provider version).
+- Any property subsets captured during provider interception (useful for codegen hints).
+
 The resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. Some resources with composite identifiers may show `<PLACEHOLDER>` IDs; fill those in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
+
+#### Capture-mode options
+
+- `-skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is automatically turned on for capture mode, but you can also enable it manually when experimenting.
+- `-keep-import-state`: Keeps the temporary local backend directory so you can inspect the `Pulumi.dev.yaml`, exported stack files, or reuse them across multiple runs.
+- `-local-stack-file`: Provides an explicit backend file path to reuse instead of letting the tool create a new temp directory. Combine this with `-keep-import-state` for deterministic CI runs.
 
 ### Unsupported Resources
 

@@ -1,6 +1,9 @@
 package proxy
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // Capture describes a single intercepted resource that should be written to an
 // import file entry.
@@ -9,6 +12,7 @@ type Capture struct {
 	Name        string
 	LogicalName string
 	ID          string
+	Properties  []string
 }
 
 // CaptureCollector safely aggregates Capture entries from multiple goroutines.
@@ -48,6 +52,9 @@ func (c *CaptureCollector) Append(entry Capture) {
 	defer c.mu.Unlock()
 	c.total++
 	key := entry.Type + "|" + entry.Name + "|" + entry.LogicalName + "|" + entry.ID
+	if len(entry.Properties) > 0 {
+		key += "|" + strings.Join(entry.Properties, ",")
+	}
 	if _, ok := c.seen[key]; ok {
 		return
 	}

@@ -56,18 +56,18 @@ rich Pulumi import files without mutating user stacks.
 
 ### Import File Generation Enhancements
 
-- [ ] Introduce a function that merges data from two sources: (a) Pulumi state
+- [x] Introduce a function that merges data from two sources: (a) Pulumi state
       (exported deployment) and (b) the capture collector. State provides the
       authoritative resource set, URNs, parents/providers, and version info;
       capture metadata supplies property subsets or other hints.
-- [ ] Populate the new `NameTable` field by walking the exported deployment and
+- [x] Populate the new `NameTable` field by walking the exported deployment and
       mapping variable names to URNs.
-- [ ] For each AWS resource in state:
-  - [ ] Fill `Type`, `Name`, `LogicalName`, `Parent`, `Provider`, `Component`,
+- [x] For each AWS resource in state:
+  - [x] Fill `Type`, `Name`, `LogicalName`, `Parent`, `Provider`, `Component`,
         and `Version` from state/metadata.
-  - [ ] Attach any `Properties` subset recorded via capture (if present).
-  - [ ] Skip non-AWS resources or Pulumi bookkeeping entries.
-- [ ] Continue calling `imports.WriteFile` to persist the enriched JSON to the
+  - [x] Attach any `Properties` subset recorded via capture (if present).
+  - [x] Skip non-AWS resources or Pulumi bookkeeping entries.
+- [x] Continue calling `imports.WriteFile` to persist the enriched JSON to the
       user-supplied path.
 
 ### Testing & Docs
