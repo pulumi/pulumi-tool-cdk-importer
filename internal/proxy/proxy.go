@@ -52,9 +52,12 @@ const (
 
 // RunOptions surfaces CLI decisions (mode, import path) into the proxy layer.
 type RunOptions struct {
-	Mode           RunMode
-	ImportFilePath string
-	Collector      *CaptureCollector
+	Mode            RunMode
+	ImportFilePath  string
+	Collector       *CaptureCollector
+	SkipCreate      bool
+	KeepImportState bool
+	LocalStackFile  string
 }
 
 type pulumiTest struct {

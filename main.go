@@ -30,6 +30,9 @@ func main() {
 	ctx := context.Background()
 	var stackRef = flag.String("stack", "", "CloudFormation stack name")
 	var importFile = flag.String("import-file", "", "If set, capture resource IDs into this Pulumi bulk import file path")
+	var skipCreate = flag.Bool("skip-create", false, "Skip creation of special resources and only capture metadata")
+	var keepImportState = flag.Bool("keep-import-state", false, "Keep the temporary local backend after capture runs finish")
+	var localStackFile = flag.String("local-stack-file", "", "Path to the local backend file to re-use when capturing imports")
 	flag.Parse()
 	if stackRef == nil || *stackRef == "" {
 		log.Fatalf("stack is required")
@@ -38,9 +41,23 @@ func main() {
 
 	mode := proxy.RunPulumi
 	var importPath string
+	skipCreateMode := skipCreate != nil && *skipCreate
+	keepState := keepImportState != nil && *keepImportState
+	localStack := ""
+	if localStackFile != nil {
+		localStack = *localStackFile
+	}
 	if importFile != nil && *importFile != "" {
 		mode = proxy.CaptureImports
 		importPath = *importFile
+		skipCreateMode = true
+	} else {
+		if keepState {
+			log.Fatalf("-keep-import-state requires -import-file to be set")
+		}
+		if localStack != "" {
+			log.Fatalf("-local-stack-file requires -import-file to be set")
+		}
 	}
 
 	cc, err := lookups.NewDefaultLookups(ctx)
@@ -54,8 +71,11 @@ func main() {
 	}
 
 	options := proxy.RunOptions{
-		Mode:           mode,
-		ImportFilePath: importPath,
+		Mode:            mode,
+		ImportFilePath:  importPath,
+		SkipCreate:      skipCreateMode,
+		KeepImportState: keepState,
+		LocalStackFile:  localStack,
 	}
 
 	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options); err != nil {
