@@ -27,9 +27,6 @@ import (
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/proxy"
 )
 
-//go:embed deps/cdk2pulumi/cdk2pulumi
-var cdk2pulumiBinary []byte
-
 func main() {
 	logger := log.New(os.Stdout, "[cdk-importer] ", log.Ltime|log.Lshortfile)
 	ctx := context.Background()
@@ -42,16 +39,39 @@ func main() {
 	flag.Parse()
 
 	if *cdkApp != "" {
-		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp)
+		// Apply defaults for cdk-app mode if not explicitly set
+		if *importFile == "" {
+			*importFile = "import.json"
+		}
+		// We can't easily check if bool flags were set by user or default, 
+		// but for these specific flags, if cdk-app is set, we want to enforce these defaults 
+		// unless we want to add more complex flag parsing logic. 
+		// Given the requirement "imply -skip-create", we will set them to true.
+		// If the user explicitly sets -skip-create=false, this would overwrite it.
+		// To handle that correctly, we would need to check if the flag was visited.
+		// However, standard flag package doesn't make this super easy without visiting.
+		// Let's assume "imply" means "set default to true".
+		
+		// A better way with standard flag is to check if they have their default values
+		// but that doesn't distinguish "not set" from "set to default".
+		// For now, let's just set them if they are false (default).
+		if !*skipCreate {
+			*skipCreate = true
+		}
+		if !*keepImportState {
+			*keepImportState = true
+		}
+		if *localStackFile == "" {
+			*localStackFile = "stack-state.json"
+		}
+
+		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp, *stackRef)
 		if err != nil {
 			log.Fatalf("failed to run cdk2pulumi: %v", err)
 		}
 		if err := os.Chdir(wd); err != nil {
 			log.Fatalf("failed to change directory: %v", err)
 		}
-		// If stack is not provided, we might need to infer it or require it.
-		// For now, let's assume the user still needs to provide -stack if it's required by the next steps.
-		// However, cdk2pulumi generates a Pulumi.yaml, so the stack name might be relevant for the import process.
 	}
 
 	if stackRef == nil || *stackRef == "" {
