@@ -16,14 +16,19 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"flag"
 	"log"
 	"os"
 
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/cdk"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/proxy"
 )
+
+//go:embed deps/cdk2pulumi/cdk2pulumi
+var cdk2pulumiBinary []byte
 
 func main() {
 	logger := log.New(os.Stdout, "[cdk-importer] ", log.Ltime|log.Lshortfile)
@@ -33,7 +38,22 @@ func main() {
 	var skipCreate = flag.Bool("skip-create", false, "Skip creation of special resources and only capture metadata")
 	var keepImportState = flag.Bool("keep-import-state", false, "Keep the temporary local backend after capture runs finish")
 	var localStackFile = flag.String("local-stack-file", "", "Path to the local backend file to re-use when capturing imports")
+	var cdkApp = flag.String("cdk-app", "", "Path to the CDK application to import")
 	flag.Parse()
+
+	if *cdkApp != "" {
+		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp)
+		if err != nil {
+			log.Fatalf("failed to run cdk2pulumi: %v", err)
+		}
+		if err := os.Chdir(wd); err != nil {
+			log.Fatalf("failed to change directory: %v", err)
+		}
+		// If stack is not provided, we might need to infer it or require it.
+		// For now, let's assume the user still needs to provide -stack if it's required by the next steps.
+		// However, cdk2pulumi generates a Pulumi.yaml, so the stack name might be relevant for the import process.
+	}
+
 	if stackRef == nil || *stackRef == "" {
 		log.Fatalf("stack is required")
 	}
