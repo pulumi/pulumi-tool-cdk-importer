@@ -12,11 +12,11 @@ builds:
 - id: pulumi-tool-cdk-importer
   binary: pulumi-tool-cdk-importer
   goarch:
-  - amd64
+  # - amd64
   - arm64
   goos:
   - darwin
-  - windows
+  # - windows
   - linux
   ldflags:
   - -s

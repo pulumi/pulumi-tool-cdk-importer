@@ -28,3 +28,5 @@ cover.cov
 integration/**/node_modules/
 bin
 coverage.txt
+goreleaser
+deps

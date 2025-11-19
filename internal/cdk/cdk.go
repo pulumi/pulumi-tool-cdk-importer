@@ -37,9 +37,9 @@ func RunCDK2Pulumi(binaryContent []byte, appPath string, stackName string) (stri
 	}
 
 	// Run the binary
-	args := []string{appPath}
+	args := []string{"--assembly", appPath}
 	if stackName != "" {
-		args = append(args, "--stack", stackName)
+		args = append(args, "--stacks", stackName)
 	}
 	cmd := exec.Command(tmpFile.Name(), args...)
 	cmd.Dir = outputDir
