@@ -38,6 +38,10 @@ func main() {
 	var cdkApp = flag.String("cdk-app", "", "Path to the CDK application to import")
 	flag.Parse()
 
+	if os.Getenv("AWS_REGION") == "" && os.Getenv("AWS_DEFAULT_REGION") == "" {
+		log.Fatal("AWS_REGION or AWS_DEFAULT_REGION environment variable must be set")
+	}
+
 	if *cdkApp != "" {
 		// Apply defaults for cdk-app mode if not explicitly set
 		if *importFile == "" {

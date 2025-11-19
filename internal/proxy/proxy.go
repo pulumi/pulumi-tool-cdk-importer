@@ -95,6 +95,24 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	if err != nil {
 		return err
 	}
+	
+	// Merge process environment into envVars
+	// We iterate over os.Environ() and add any missing keys to envVars.
+	// We prioritize the values returned by startProxiedProviders (which contains PULUMI_DEBUG_PROVIDERS).
+	for _, e := range os.Environ() {
+		pair := strings.SplitN(e, "=", 2)
+		if len(pair) == 2 {
+			k, v := pair[0], pair[1]
+			if _, exists := envVars[k]; !exists {
+				envVars[k] = v
+			}
+		}
+	}
+	
+	// Prevent Pulumi from checking for updates or new versions, which can cause hangs or delays
+	envVars["PULUMI_SKIP_UPDATE_CHECK"] = "true"
+	envVars["PULUMI_AUTOMATION_API_SKIP_VERSION_CHECK"] = "true"
+
 	var stack auto.Stack
 	var cleanup func()
 	if opts.Mode == CaptureImports {
