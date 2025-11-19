@@ -26,7 +26,7 @@ Usage of pulumi-tool-cdk-importer:
   -skip-create
     	Skip creating special CDK asset helper resources (implied when -import-file is provided)
   -stack string
-    	CloudFormation stack name to import
+    	CloudFormation stack name to import (can be specified multiple times or comma-separated)
 ```
 
 To migrate your existing CDK infrastructure to `pulumi-cdk`:
@@ -35,6 +35,13 @@ To migrate your existing CDK infrastructure to `pulumi-cdk`:
 
 1. Instead of running `pulumi up`, run `pulumi plugin run cdk-importer -- -stack $CFStackName`. This will import the state of the 
   infrastructure defined by your CDK stack into Pulumi state. This operation is read-only (with the below exceptions) and should not modify any resources.
+  
+  You can also import multiple stacks at once:
+  ```shell
+  pulumi plugin run cdk-importer -- -stack Stack1 -stack Stack2
+  # or
+  pulumi plugin run cdk-importer -- -stack Stack1,Stack2
+  ```
 
 1. To verify that everything worked as expected, run `pulumi preview`. It should show no changes.
 
@@ -44,6 +51,8 @@ The tool can also directly integrate with a CDK application to generate the impo
 
 ```shell
 pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack my-stack
+# Multiple stacks
+pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack Stack1,Stack2
 ```
 
 When `-cdk-app` is used, the tool performs the following steps:

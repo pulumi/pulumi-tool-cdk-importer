@@ -18,8 +18,10 @@ import (
 	"context"
 	_ "embed"
 	"flag"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/cdk"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
@@ -30,7 +32,8 @@ import (
 func main() {
 	logger := log.New(os.Stdout, "[cdk-importer] ", log.Ltime|log.Lshortfile)
 	ctx := context.Background()
-	var stackRef = flag.String("stack", "", "CloudFormation stack name")
+	var stacks stringSlice
+	flag.Var(&stacks, "stack", "CloudFormation stack name (can be specified multiple times)")
 	var importFile = flag.String("import-file", "", "If set, capture resource IDs into this Pulumi bulk import file path")
 	var skipCreate = flag.Bool("skip-create", false, "Skip creation of special resources and only capture metadata")
 	var keepImportState = flag.Bool("keep-import-state", false, "Keep the temporary local backend after capture runs finish")
@@ -47,15 +50,15 @@ func main() {
 		if *importFile == "" {
 			*importFile = "import.json"
 		}
-		// We can't easily check if bool flags were set by user or default, 
-		// but for these specific flags, if cdk-app is set, we want to enforce these defaults 
-		// unless we want to add more complex flag parsing logic. 
+		// We can't easily check if bool flags were set by user or default,
+		// but for these specific flags, if cdk-app is set, we want to enforce these defaults
+		// unless we want to add more complex flag parsing logic.
 		// Given the requirement "imply -skip-create", we will set them to true.
 		// If the user explicitly sets -skip-create=false, this would overwrite it.
 		// To handle that correctly, we would need to check if the flag was visited.
 		// However, standard flag package doesn't make this super easy without visiting.
 		// Let's assume "imply" means "set default to true".
-		
+
 		// A better way with standard flag is to check if they have their default values
 		// but that doesn't distinguish "not set" from "set to default".
 		// For now, let's just set them if they are false (default).
@@ -69,7 +72,7 @@ func main() {
 			*localStackFile = "stack-state.json"
 		}
 
-		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp, *stackRef)
+		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp, stacks)
 		if err != nil {
 			log.Fatalf("failed to run cdk2pulumi: %v", err)
 		}
@@ -78,10 +81,9 @@ func main() {
 		}
 	}
 
-	if stackRef == nil || *stackRef == "" {
+	if len(stacks) == 0 {
 		log.Fatalf("stack is required")
 	}
-	stackName := common.StackName(*stackRef)
 
 	mode := proxy.RunPulumi
 	var importPath string
@@ -109,9 +111,12 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	logger.Printf("Getting stack resources for stack: %s", stackName)
-	if err := cc.GetStackResources(ctx, stackName); err != nil {
-		logger.Fatal(err)
+	for _, stackRef := range stacks {
+		stackName := common.StackName(stackRef)
+		logger.Printf("Getting stack resources for stack: %s", stackName)
+		if err := cc.GetStackResources(ctx, stackName); err != nil {
+			logger.Fatal(err)
+		}
 	}
 
 	options := proxy.RunOptions{
@@ -120,10 +125,26 @@ func main() {
 		SkipCreate:      skipCreateMode,
 		KeepImportState: keepState,
 		LocalStackFile:  localStack,
-		StackName:       string(stackName),
+		StackNames:      stacks,
 	}
 
 	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options); err != nil {
 		log.Fatal(err)
 	}
+}
+
+type stringSlice []string
+
+func (s *stringSlice) String() string {
+	return fmt.Sprintf("%v", *s)
+}
+
+func (s *stringSlice) Set(value string) error {
+	parts := strings.Split(value, ",")
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			*s = append(*s, trimmed)
+		}
+	}
+	return nil
 }

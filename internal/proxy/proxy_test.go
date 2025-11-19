@@ -36,16 +36,55 @@ func TestSanitizeStackComponent(t *testing.T) {
 func TestDeriveCaptureStackName(t *testing.T) {
 	t.Parallel()
 
-	if got := deriveCaptureStackName("my-stack", ""); got != "capture-my-stack" {
-		t.Fatalf("unexpected derived stack: %s", got)
+	tests := []struct {
+		name      string
+		stackRef  string
+		stackFile string
+		want      string
+	}{
+		{
+			name:      "stack ref only",
+			stackRef:  "my-stack",
+			stackFile: "",
+			want:      "capture-my-stack",
+		},
+		{
+			name:      "stack file only",
+			stackRef:  "ignored",
+			stackFile: "path/to/my-stack.json",
+			want:      "my-stack",
+		},
+		{
+			name:      "both provided prefers file",
+			stackRef:  "ignored",
+			stackFile: "path/to/my-stack.json",
+			want:      "my-stack",
+		},
+		{
+			name:      "sanitization",
+			stackRef:  "My/Stack!",
+			stackFile: "",
+			want:      "capture-My-Stack",
+		},
+		{
+			name:      "empty",
+			stackRef:  "",
+			stackFile: "",
+			want:      "",
+		},
 	}
 
-	if got := deriveCaptureStackName("ignored", "/tmp/state.json"); got != "state" {
-		t.Fatalf("expected file-derived stack name, got %s", got)
-	}
-
-	if got := deriveCaptureStackName("", ""); got != "" {
-		t.Fatalf("expected empty when no inputs, got %s", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stacks []string
+			if tt.stackRef != "" {
+				stacks = []string{tt.stackRef}
+			}
+			got := deriveCaptureStackName(stacks, tt.stackFile)
+			if got != tt.want {
+				t.Errorf("deriveCaptureStackName() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

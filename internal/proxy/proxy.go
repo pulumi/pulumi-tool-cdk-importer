@@ -63,7 +63,7 @@ type RunOptions struct {
 	SkipCreate      bool
 	KeepImportState bool
 	LocalStackFile  string
-	StackName       string
+	StackNames      []string
 }
 
 type pulumiTest struct {
@@ -95,7 +95,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	if err != nil {
 		return err
 	}
-	
+
 	// Merge process environment into envVars
 	// We iterate over os.Environ() and add any missing keys to envVars.
 	// We prioritize the values returned by startProxiedProviders (which contains PULUMI_DEBUG_PROVIDERS).
@@ -108,7 +108,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 			}
 		}
 	}
-	
+
 	// Prevent Pulumi from checking for updates or new versions, which can cause hangs or delays
 	envVars["PULUMI_SKIP_UPDATE_CHECK"] = "true"
 	envVars["PULUMI_AUTOMATION_API_SKIP_VERSION_CHECK"] = "true"
@@ -140,11 +140,11 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 			// If we can't export state, we'll still try to write what we captured
 			state = apitype.UntypedDeployment{}
 		}
-		
+
 		if upErr != nil {
 			logger.Printf("Warning: pulumi up encountered errors, writing partial import file")
 		}
-		
+
 		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil)
 		if finalizeErr != nil {
 			logger.Printf("Error writing import file: %v", finalizeErr)
@@ -153,7 +153,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 				return finalizeErr
 			}
 		}
-		
+
 		// Return the original Up error if it occurred, so the command exits with error code
 		if upErr != nil {
 			return upErr
@@ -214,7 +214,7 @@ func prepareCaptureStack(ctx context.Context, logger *log.Logger, workDir string
 }
 
 func resolveCaptureBackend(opts RunOptions) (string, string, bool, error) {
-	stackName := deriveCaptureStackName(opts.StackName, opts.LocalStackFile)
+	stackName := deriveCaptureStackName(opts.StackNames, opts.LocalStackFile)
 	if stackName == "" {
 		stackName = fmt.Sprintf("capture-%d", time.Now().Unix())
 	}
@@ -236,16 +236,22 @@ func resolveCaptureBackend(opts RunOptions) (string, string, bool, error) {
 	return dir, stackName, true, nil
 }
 
-func deriveCaptureStackName(stackRef, stackFile string) string {
+func deriveCaptureStackName(stackRefs []string, stackFile string) string {
 	if stackFile != "" {
 		base := strings.TrimSuffix(filepath.Base(stackFile), filepath.Ext(stackFile))
 		if sanitized := sanitizeStackComponent(base); sanitized != "" {
 			return sanitized
 		}
 	}
-	if stackRef != "" {
-		if sanitized := sanitizeStackComponent(stackRef); sanitized != "" {
-			return fmt.Sprintf("capture-%s", sanitized)
+	if len(stackRefs) > 0 {
+		var sanitizedParts []string
+		for _, ref := range stackRefs {
+			if sanitized := sanitizeStackComponent(ref); sanitized != "" {
+				sanitizedParts = append(sanitizedParts, sanitized)
+			}
+		}
+		if len(sanitizedParts) > 0 {
+			return fmt.Sprintf("capture-%s", strings.Join(sanitizedParts, "-"))
 		}
 	}
 	return ""
@@ -290,7 +296,7 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	} else {
 		logger.Printf("Exported stack deployment contains %d bytes of state", len(deployment.Deployment))
 	}
-	
+
 	if isPartial {
 		logger.Println("Writing partial import file due to errors during execution")
 	}
