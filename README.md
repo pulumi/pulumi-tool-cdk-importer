@@ -38,6 +38,31 @@ To migrate your existing CDK infrastructure to `pulumi-cdk`:
 
 1. To verify that everything worked as expected, run `pulumi preview`. It should show no changes.
 
+### CDK Integration
+
+The tool can also directly integrate with a CDK application to generate the import file in a single step. This is done using the `-cdk-app` flag.
+
+```shell
+pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack my-stack
+```
+
+When `-cdk-app` is used, the tool performs the following steps:
+
+1.  **Bundled cdk2pulumi**: It extracts an embedded version of `cdk2pulumi` (a tool that converts CDK apps to Pulumi programs).
+2.  **Conversion**: It runs `cdk2pulumi` against the provided CDK application directory to generate a `Pulumi.yaml` and other necessary files in a temporary directory.
+3.  **Import**: It then runs the import process using the generated Pulumi program as the source.
+
+**Implied Flags**:
+
+When using `-cdk-app`, the following flags are automatically set (unless you explicitly override them):
+
+*   `-import-file`: Defaults to `import.json`. This enables "capture mode".
+*   `-skip-create`: Defaults to `true`.
+*   `-keep-import-state`: Defaults to `true`.
+*   `-local-stack-file`: Defaults to `stack-state.json`.
+
+This means a single command will convert your CDK app, capture the resource IDs from your deployed stack, and generate an `import.json` file ready for use with `pulumi import`.
+
 ### Generate a bulk import file
 
 If you would rather produce a Pulumi [bulk import](https://www.pulumi.com/docs/iac/guides/migration/import/#bulk-import) spec (e.g., to pair with `pulumi import --file` or `--generate-code`), pass the `--import-file` flag:
