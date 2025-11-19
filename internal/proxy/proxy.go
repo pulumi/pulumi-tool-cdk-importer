@@ -110,18 +110,39 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	}
 	level := uint(1)
 	logger.Println("Importing stack...")
-	_, err = stack.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+	_, upErr := stack.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
 		LogLevel: &level,
 	}))
-	if err != nil {
-		return err
-	}
 	if opts.Mode == CaptureImports {
-		state, err := stack.Export(ctx)
-		if err != nil {
-			return err
+		// Always attempt to export state and write import file, even if Up() failed.
+		// This allows users to get a partial import file as a starting point.
+		state, exportErr := stack.Export(ctx)
+		if exportErr != nil {
+			logger.Printf("Warning: failed to export stack state: %v", exportErr)
+			// If we can't export state, we'll still try to write what we captured
+			state = apitype.UntypedDeployment{}
 		}
-		return finalizeCapture(logger, collector, opts.ImportFilePath, state)
+		
+		if upErr != nil {
+			logger.Printf("Warning: pulumi up encountered errors, writing partial import file")
+		}
+		
+		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil)
+		if finalizeErr != nil {
+			logger.Printf("Error writing import file: %v", finalizeErr)
+			// Return the finalize error if Up succeeded, otherwise return Up error
+			if upErr == nil {
+				return finalizeErr
+			}
+		}
+		
+		// Return the original Up error if it occurred, so the command exits with error code
+		if upErr != nil {
+			return upErr
+		}
+	}
+	if upErr != nil {
+		return upErr
 	}
 	return nil
 }
@@ -245,11 +266,15 @@ func cloneEnv(env map[string]string) map[string]string {
 	return dup
 }
 
-func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment) error {
+func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool) error {
 	if len(deployment.Deployment) == 0 {
 		logger.Println("Exported stack deployment is empty; capture file will only include intercepted resources")
 	} else {
 		logger.Printf("Exported stack deployment contains %d bytes of state", len(deployment.Deployment))
+	}
+	
+	if isPartial {
+		logger.Println("Writing partial import file due to errors during execution")
 	}
 	summary := CaptureSummary{}
 	entries := make([]Capture, 0)
@@ -274,11 +299,16 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	if err := imports.WriteFile(path, file); err != nil {
 		return err
 	}
+	resultType := "complete"
+	if isPartial {
+		resultType = "partial"
+	}
 	logger.Printf(
-		"Capture mode wrote %d resources to %s (intercepted %d create calls)",
+		"Capture mode wrote %d resources to %s (intercepted %d create calls) [%s]",
 		len(file.Resources),
 		path,
 		summary.TotalIntercepts,
+		resultType,
 	)
 	if deduped := summary.TotalIntercepts - summary.UniqueResources; deduped > 0 {
 		logger.Printf("Deduped %d duplicate captures", deduped)

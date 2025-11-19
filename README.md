@@ -54,6 +54,31 @@ When `-import-file` is supplied, the tool spins up a throwaway local backend, ru
 
 The resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. Some resources with composite identifiers may show `<PLACEHOLDER>` IDs; fill those in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
 
+#### Partial import files and iterative workflows
+
+**The tool will write an import file even if errors occur during execution.** This allows you to get a starting point (a partial import file) and iteratively improve it. The command will still exit with an error code, but the import file will contain whatever resources were successfully processed.
+
+To build up your import file incrementally across multiple runs:
+
+1. Use `-local-stack-file /path/to/backend` to specify a persistent local backend
+2. Use `-keep-import-state` to prevent cleanup of that backend after each run
+3. Re-run the command as needed - each run will update the local stack state and regenerate the import file
+
+Example iterative workflow:
+```shell
+# First run - may fail partway through
+pulumi plugin run cdk-importer -- -stack my-stack \
+  --import-file ./import.json \
+  --local-stack-file ./capture-state \
+  --keep-import-state
+
+# Fix issues, then re-run with the same flags to continue building state
+pulumi plugin run cdk-importer -- -stack my-stack \
+  --import-file ./import.json \
+  --local-stack-file ./capture-state \
+  --keep-import-state
+```
+
 #### Capture-mode options
 
 - `-skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is automatically turned on for capture mode, but you can also enable it manually when experimenting.
