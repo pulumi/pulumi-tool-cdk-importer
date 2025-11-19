@@ -44,6 +44,10 @@ func (m *mockMetadataSource) Resource(resourceToken string) (providerMetadata.Cl
 	panic("implement me")
 }
 
+func (m *mockMetadataSource) Separator(resourceToken tokens.Type) string {
+	return "/"
+}
+
 func Test_renderResourceModel(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
 		actual, err := renderResourceModel(

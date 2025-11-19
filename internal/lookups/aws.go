@@ -41,7 +41,8 @@ func (a *awsLookups) FindPrimaryResourceID(
 	logicalID common.LogicalResourceID,
 	props map[string]any,
 ) (common.PrimaryResourceID, error) {
-	resourceType, idParts, err := getPrimaryIdentifiers(metadata.NewAwsMetadataSource(), resourceToken)
+	metadataSource := metadata.NewAwsMetadataSource()
+	resourceType, idParts, err := getPrimaryIdentifiers(metadataSource, resourceToken)
 	if err != nil {
 		return "", err
 	}
@@ -62,7 +63,8 @@ func (a *awsLookups) FindPrimaryResourceID(
 		if err != nil {
 			return "", err
 		}
-		return a.findAwsCompositeId(logicalID, resourceModel)
+		separator := metadataSource.Separator(resourceToken)
+		return a.findAwsCompositeId(logicalID, resourceModel, separator)
 	}
 }
 
@@ -78,11 +80,11 @@ func (a *awsLookups) getArnForResource(resourceType common.ResourceType, name st
 }
 
 // renderAwsImportId will create a AWS import id value.
-// AWS import ids are concatenated with a '/' separator
-func renderAwsImportId(id string, resourceModel map[string]string) string {
+// AWS import ids are concatenated with the given separator (usually '/' but some resources use ':')
+func renderAwsImportId(id string, resourceModel map[string]string, separator string) string {
 	prefix := ""
 	for _, value := range resourceModel {
-		prefix = fmt.Sprintf("%s%s/", prefix, value)
+		prefix = fmt.Sprintf("%s%s%s", prefix, value, separator)
 	}
 	return fmt.Sprintf("%s%s", prefix, id)
 }
@@ -92,10 +94,11 @@ func renderAwsImportId(id string, resourceModel map[string]string) string {
 func (a *awsLookups) findAwsCompositeId(
 	logicalID common.LogicalResourceID,
 	resourceModel map[string]string,
+	separator string,
 ) (common.PrimaryResourceID, error) {
 	if r, ok := a.cfnStackResources[logicalID]; ok {
 		suffix := string(r.PhysicalID)
-		return common.PrimaryResourceID(renderAwsImportId(suffix, resourceModel)), nil
+		return common.PrimaryResourceID(renderAwsImportId(suffix, resourceModel, separator)), nil
 	}
 	return "", fmt.Errorf("Couldn't find an import id for resource with logicalID %q", logicalID)
 }

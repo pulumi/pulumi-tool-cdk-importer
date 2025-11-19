@@ -57,4 +57,30 @@ func TestFindAwsPrimaryResourceID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("arn:aws:iam::123456789012:policy/Policy"), actual)
 	})
+
+	t.Run("iam role policy with colon separator", func(t *testing.T) {
+		ctx := context.Background()
+		resourceToken := tokens.Type("aws:iam/rolePolicy:RolePolicy")
+		logicalID := common.LogicalResourceID("RolePolicy")
+		props := map[string]interface{}{
+			"role": "MyRole",
+		}
+
+		awsLookups := &awsLookups{
+			region:  "us-west-2",
+			account: "123456789012",
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"RolePolicy": {
+					ResourceType: "AWS::IAM::Policy",
+					PhysicalID:   "MyPolicy",
+					LogicalID:    "RolePolicy",
+				},
+			},
+		}
+
+		actual, err := awsLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
+		assert.NoError(t, err)
+		// Should use colon separator for RolePolicy
+		assert.Equal(t, common.PrimaryResourceID("MyRole:MyPolicy"), actual)
+	})
 }
