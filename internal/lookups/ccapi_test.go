@@ -2,9 +2,13 @@ package lookups
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
@@ -17,6 +21,8 @@ type mockListResourcesPager struct {
 	typeName             string
 	page                 int
 	err                  error
+	errSequence          []error
+	seqIdx               int
 }
 
 func (m *mockListResourcesPager) HasMorePages() bool {
@@ -28,7 +34,15 @@ func (m *mockListResourcesPager) HasMorePages() bool {
 }
 
 func (m *mockListResourcesPager) NextPage(ctx context.Context, optFns ...func(*cloudcontrol.Options)) (*cloudcontrol.ListResourcesOutput, error) {
-	if m.err != nil {
+	if len(m.errSequence) > 0 {
+		if m.seqIdx < len(m.errSequence) {
+			err := m.errSequence[m.seqIdx]
+			m.seqIdx++
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else if m.err != nil {
 		return nil, m.err
 	}
 	return &cloudcontrol.ListResourcesOutput{
@@ -39,6 +53,12 @@ func (m *mockListResourcesPager) NextPage(ctx context.Context, optFns ...func(*c
 
 type mockCCAPIClient struct {
 	mockGetPager func(typeName string, resourceModel *string) ListResourcesPager
+}
+
+type fixedBackoff time.Duration
+
+func (f fixedBackoff) BackoffDelay(int, error) (time.Duration, error) {
+	return time.Duration(f), nil
 }
 
 func (m *mockCCAPIClient) GetPager(typeName string, resourceModel *string) ListResourcesPager {
@@ -203,5 +223,232 @@ func TestFindPrimaryResourceID(t *testing.T) {
 		actual, err := ccapiLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("arn:aws:elasticloadbalancing:us-west-2:123456789012:listener/app/my-load-balancer/50dc6c495c0c9188/0467ef3c8400ae65"), actual)
+	})
+
+	t.Run("ScalingPolicy uses composite identifier with retry", func(t *testing.T) {
+		ctx := context.Background()
+		resourceToken := tokens.Type("aws-native:applicationautoscaling:ScalingPolicy")
+		logicalID := common.LogicalResourceID("ScalingPolicy")
+		props := map[string]interface{}{
+			"PolicyName":        "MyPolicy",
+			"ResourceId":        "service/myCluster/myService",
+			"ScalableDimension": "ecs:service:DesiredCount",
+			"ServiceNamespace":  "ecs",
+		}
+
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				if resourceModel != nil {
+					var model map[string]string
+					_ = json.Unmarshal([]byte(*resourceModel), &model)
+
+					// First call: Only ScalableDimension (Arn is not in props, it's an output)
+					if len(model) == 1 && model["ScalableDimension"] == "ecs:service:DesiredCount" {
+						return &mockListResourcesPager{
+							typeName: "AWS::ApplicationAutoScaling::ScalingPolicy",
+							err: &types.InvalidRequestException{
+								Message: aws.String("InvalidRequestException: Missing or invalid ResourceModel property... Required property: (#: required key [ServiceNamespace] not found)"),
+							},
+						}
+					}
+
+					// Second call: Only ServiceNamespace (the missing property extracted from error)
+					if len(model) == 1 && model["ServiceNamespace"] == "ecs" {
+						return &mockListResourcesPager{
+							typeName: "AWS::ApplicationAutoScaling::ScalingPolicy",
+							resourceDescriptions: []types.ResourceDescription{
+								{
+									Identifier: aws.String("arn:aws:autoscaling:us-west-2:123456789012:scalingPolicy:uuid:autoScalingGroupName/groupName:policyName/MyPolicy|ecs:service:DesiredCount"),
+								},
+							},
+						}
+					}
+				}
+				return &mockListResourcesPager{typeName: "AWS::ApplicationAutoScaling::ScalingPolicy"}
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"ScalingPolicy": {
+					ResourceType: "AWS::ApplicationAutoScaling::ScalingPolicy",
+					PhysicalID:   "arn:aws:autoscaling:us-west-2:123456789012:scalingPolicy:uuid:autoScalingGroupName/groupName:policyName/MyPolicy|ecs:service:DesiredCount",
+					LogicalID:    "ScalingPolicy",
+					Props:        props,
+				},
+			},
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+
+		actual, err := ccapiLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:autoscaling:us-west-2:123456789012:scalingPolicy:uuid:autoScalingGroupName/groupName:policyName/MyPolicy|ecs:service:DesiredCount"), actual)
+	})
+
+	t.Run("BucketPolicy uses physical ID strategy", func(t *testing.T) {
+		ctx := context.Background()
+		resourceToken := tokens.Type("aws-native:s3:BucketPolicy")
+		logicalID := common.LogicalResourceID("BucketPolicy")
+		props := map[string]interface{}{
+			"Bucket": "my-bucket",
+			"PolicyDocument": map[string]interface{}{
+				"Statement": []interface{}{},
+			},
+		}
+
+		// Mock client shouldn't be called because we use StrategyPhysicalID
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				t.Fatal("Should not call CCAPI for BucketPolicy")
+				return nil
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"BucketPolicy": {
+					ResourceType: "AWS::S3::BucketPolicy",
+					PhysicalID:   "my-bucket", // Physical ID is the bucket name
+					LogicalID:    "BucketPolicy",
+					Props:        props,
+				},
+			},
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+
+		actual, err := ccapiLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("my-bucket"), actual)
+	})
+
+	t.Run("Missing required property fallthrough - new format", func(t *testing.T) {
+		ctx := context.Background()
+		resourceToken := tokens.Type("aws-native:lambda:Permission")
+		logicalID := common.LogicalResourceID("Permission")
+		props := map[string]interface{}{
+			"FunctionName": "my-function",
+		}
+
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				if resourceModel == nil {
+					return &mockListResourcesPager{
+						typeName: "AWS::Lambda::Permission",
+						err: &types.InvalidRequestException{
+							Message: aws.String("InvalidRequestException: Missing or invalid ResourceModel property in AWS::Lambda::Permission list handler request input.Required property:  (#: required key [FunctionName] not found)"),
+						},
+					}
+				} else {
+					return &mockListResourcesPager{
+						typeName: "AWS::Lambda::Permission",
+						resourceDescriptions: []types.ResourceDescription{
+							{
+								Identifier: aws.String("my-function/permission-id"),
+							},
+						},
+					}
+				}
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Permission": {
+					ResourceType: "AWS::Lambda::Permission",
+					PhysicalID:   "my-function/permission-id",
+					LogicalID:    "Permission",
+					Props: map[string]interface{}{
+						"FunctionName": "my-function",
+					},
+				},
+			},
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: map[resourceCacheKey][]types.ResourceDescription{},
+		}
+
+		actual, err := ccapiLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("my-function/permission-id"), actual)
+	})
+
+	t.Run("listResources retries on throttling", func(t *testing.T) {
+		ctx := context.Background()
+		oldRetryer := newCCAPIRetryer
+		newCCAPIRetryer = func() aws.Retryer {
+			return retry.NewAdaptiveMode(func(o *retry.AdaptiveModeOptions) {
+				o.StandardOptions = append(o.StandardOptions, func(so *retry.StandardOptions) {
+					so.MaxAttempts = 3
+					so.RateLimiter = ratelimit.None
+					so.Backoff = fixedBackoff(time.Millisecond)
+				})
+			})
+		}
+		defer func() {
+			newCCAPIRetryer = oldRetryer
+		}()
+
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				return &mockListResourcesPager{
+					typeName: "AWS::S3::Bucket",
+					errSequence: []error{
+						&types.ThrottlingException{Message: aws.String("slow down")},
+						nil,
+					},
+					resourceDescriptions: []types.ResourceDescription{
+						{Identifier: aws.String("bucket-name")},
+					},
+				}
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+
+		res, err := ccapiLookups.listResources(ctx, common.ResourceType("AWS::S3::Bucket"), map[string]string{})
+		assert.NoError(t, err)
+		assert.Len(t, res, 1)
+		assert.Equal(t, "bucket-name", *res[0].Identifier)
+	})
+
+	t.Run("listResources stops after max throttling", func(t *testing.T) {
+		ctx := context.Background()
+		oldRetryer := newCCAPIRetryer
+		newCCAPIRetryer = func() aws.Retryer {
+			return retry.NewAdaptiveMode(func(o *retry.AdaptiveModeOptions) {
+				o.StandardOptions = append(o.StandardOptions, func(so *retry.StandardOptions) {
+					so.MaxAttempts = 2
+					so.RateLimiter = ratelimit.None
+					so.Backoff = fixedBackoff(time.Millisecond)
+				})
+			})
+		}
+		defer func() {
+			newCCAPIRetryer = oldRetryer
+		}()
+
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				return &mockListResourcesPager{
+					typeName: "AWS::S3::Bucket",
+					errSequence: []error{
+						&types.ThrottlingException{Message: aws.String("slow down")},
+						&types.ThrottlingException{Message: aws.String("still slow")},
+					},
+				}
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+
+		_, err := ccapiLookups.listResources(ctx, common.ResourceType("AWS::S3::Bucket"), map[string]string{})
+		assert.Error(t, err)
 	})
 }

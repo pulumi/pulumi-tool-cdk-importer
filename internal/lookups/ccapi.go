@@ -7,9 +7,14 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
+	"github.com/aws/smithy-go"
 	"github.com/pulumi/pulumi-aws-native/provider/pkg/naming"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/metadata"
@@ -21,6 +26,17 @@ import (
 type ListResourcesPager interface {
 	HasMorePages() bool
 	NextPage(ctx context.Context, optFns ...func(*cloudcontrol.Options)) (*cloudcontrol.ListResourcesOutput, error)
+}
+
+// retryer factory (overridable in tests)
+var newCCAPIRetryer = func() aws.Retryer {
+	return retry.NewAdaptiveMode(func(o *retry.AdaptiveModeOptions) {
+		o.StandardOptions = append(o.StandardOptions, func(so *retry.StandardOptions) {
+			// Allow more attempts than SDK default and let adaptive mode sleep for throttling
+			so.MaxAttempts = 8
+			so.RateLimiter = ratelimit.None
+		})
+	})
 }
 
 // A key to use for caching resources
@@ -133,13 +149,17 @@ func (c *ccapiLookups) findOwnNativeId(
 	primaryID resource.PropertyKey,
 ) (common.PrimaryResourceID, error) {
 	idPropertyName := strings.ToLower(string(primaryID))
-	if strings.HasSuffix(idPropertyName, "name") || strings.HasSuffix(idPropertyName, "id") {
+	md := metadata.NewCCApiMetadataSource()
+	strategy := md.GetIdPropertyStrategy(resourceType, idPropertyName)
+
+	// 1. Check for explicit strategy override
+	if strategy == metadata.StrategyPhysicalID {
 		if r, ok := c.cfnStackResources[logicalID]; ok {
 			// NOTE! Assuming that PrimaryResourceID matches the PhysicalID.
 			return common.PrimaryResourceID(r.PhysicalID), nil
 		}
 		return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
-	} else if strings.HasSuffix(idPropertyName, "arn") {
+	} else if strategy == metadata.StrategyLookup {
 		if r, ok := c.cfnStackResources[logicalID]; ok {
 			suffix := string(r.PhysicalID)
 			id, err := c.findResourceIdentifier(ctx, resourceType, logicalID, suffix, nil)
@@ -148,16 +168,25 @@ func (c *ccapiLookups) findOwnNativeId(
 			}
 			return id, nil
 		}
-	} else if resourceType == "AWS::S3::BucketPolicy" && idPropertyName == "bucket" {
-		if r, ok := c.cfnStackResources[logicalID]; ok {
-			// NOTE! Assuming that PrimaryResourceID matches the PhysicalID.
-			return common.PrimaryResourceID(r.PhysicalID), nil
-		}
-		return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
-	} else {
-		return "", fmt.Errorf("Expected suffix of 'Id', 'Name', or 'Arn'; got %s", idPropertyName)
 	}
-	return "", fmt.Errorf("Something happened")
+
+	// 2. ARN heuristic: properties ending in 'arn' typically need lookup
+	if strings.HasSuffix(idPropertyName, "arn") {
+		if r, ok := c.cfnStackResources[logicalID]; ok {
+			suffix := string(r.PhysicalID)
+			id, err := c.findResourceIdentifier(ctx, resourceType, logicalID, suffix, nil)
+			if err != nil {
+				return "", fmt.Errorf("Could not find id for %s: %w", logicalID, err)
+			}
+			return id, nil
+		}
+	}
+
+	// 3. Default: assume PhysicalID matches the primary identifier
+	if r, ok := c.cfnStackResources[logicalID]; ok {
+		return common.PrimaryResourceID(r.PhysicalID), nil
+	}
+	return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
 }
 
 // findResourceIdentifier attempts to determine an import id for a resource when
@@ -188,10 +217,23 @@ func (c *ccapiLookups) findResourceIdentifier(
 			// CCAPI ListResources resource model should be. For example, AWS::ElasticLoadBalancingV2::Listener
 			// I've found that the logs usually look like this (hopefully this is consistent):
 			// `InvalidRequestException: Missing Or Invalid ResourceModel property in AWS::ElasticLoadBalancingV2::Listener list handler request input. Required property: [LoadBalancerArn]`
-			re := regexp.MustCompile(`Required property: \[(.*?)\]`)
-			match := re.FindStringSubmatch(invalid.ErrorMessage())
-			if len(match) > 1 {
-				missingProperty := match[1]
+			// We attempt to match against multiple regexes as the error message format is not consistent
+			// across all resources.
+			regexes := []*regexp.Regexp{
+				regexp.MustCompile(`Required property: \[(.*?)\]`),
+				regexp.MustCompile(`required key \[(.*?)\]`),
+			}
+
+			var missingProperty string
+			for _, re := range regexes {
+				match := re.FindStringSubmatch(invalid.ErrorMessage())
+				if len(match) > 1 {
+					missingProperty = match[1]
+					break
+				}
+			}
+
+			if missingProperty != "" {
 				// create a correct resource model with the missing property
 				resourceModel, err = renderResourceModel([]resource.PropertyKey{
 					resource.PropertyKey(missingProperty),
@@ -204,10 +246,10 @@ func (c *ccapiLookups) findResourceIdentifier(
 				// run it again with the new resource model
 				return c.findResourceIdentifier(ctx, resourceType, logicalID, suffix, resourceModel)
 			} else {
-				return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v: %w", resourceType, resourceModel, err)
+				return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v Props: %v: MissingProperty %s:  %w", resourceType, resourceModel, c.cfnStackResources[logicalID].Props, missingProperty, err)
 			}
 		} else {
-			return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v: %w", resourceType, resourceModel, err)
+			return "", fmt.Errorf("Unknown error: Error finding resource of type %s with resourceModel: %v Props: %v: %w", resourceType, resourceModel, c.cfnStackResources[logicalID].Props, err)
 		}
 	}
 
@@ -220,7 +262,7 @@ func (c *ccapiLookups) findResourceIdentifier(
 		}
 	}
 
-	return "", fmt.Errorf("could not find resource identifier for type: %s", resourceType)
+	return "", fmt.Errorf("could not find resource identifier for type: %s: %v", resourceType, resourceModel)
 }
 
 // listResources lists resources of a given type from the CCAPI
@@ -248,14 +290,81 @@ func (c *ccapiLookups) listResources(
 	paginator := c.ccapiClient.GetPager(typeName, model)
 	resources := []types.ResourceDescription{}
 	// TODO: we might be able to short circuit this if we find the correct one
+	retryer := newCCAPIRetryer()
+	releaseInitial := retryer.GetInitialToken()
+	defer func() {
+		_ = releaseInitial(nil)
+	}()
+
 	for paginator.HasMorePages() {
-		output, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
+		var output *cloudcontrol.ListResourcesOutput
+		var err error
+
+		for attempt := 1; attempt <= retryer.MaxAttempts(); attempt++ {
+			output, err = paginator.NextPage(ctx)
+			if err == nil {
+				break
+			}
+
+			sdkErr := toAPIError(err)
+			if !retryer.IsErrorRetryable(sdkErr) || attempt >= retryer.MaxAttempts() {
+				return nil, err
+			}
+
+			releaseRetryToken, tokenErr := retryer.GetRetryToken(ctx, sdkErr)
+			if tokenErr != nil {
+				return nil, err
+			}
+
+			delay, delayErr := retryer.RetryDelay(attempt, sdkErr)
+			if delayErr != nil {
+				_ = releaseRetryToken(sdkErr)
+				return nil, err
+			}
+
+			select {
+			case <-ctx.Done():
+				_ = releaseRetryToken(sdkErr)
+				return nil, ctx.Err()
+			case <-time.After(delay):
+				_ = releaseRetryToken(nil)
+			}
 		}
+
 		resources = append(resources, output.ResourceDescriptions...)
 	}
 
 	c.ccapiResourceCache[cacheKey] = resources
 	return resources, nil
+}
+
+func isThrottlingError(err error) bool {
+	var throttling *types.ThrottlingException
+	if errors.As(err, &throttling) {
+		return true
+	}
+	if apiErr, ok := err.(smithy.APIError); ok {
+		code := apiErr.ErrorCode()
+		if strings.Contains(strings.ToLower(code), "throttling") {
+			return true
+		}
+	}
+	return false
+}
+
+func toAPIError(err error) error {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr
+	}
+
+	code := "GeneralServiceException"
+	if isThrottlingError(err) {
+		code = "ThrottlingException"
+	}
+
+	return &smithy.GenericAPIError{
+		Code:    code,
+		Message: err.Error(),
+	}
 }
