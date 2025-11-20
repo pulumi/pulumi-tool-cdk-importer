@@ -138,7 +138,13 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		debugOptions.Debug = true
 	}
 	logger.Println("Importing stack...")
-	_, upErr := stack.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debugOptions))
+	_, upErr := stack.Up(ctx,
+		optup.ContinueOnError(),
+		optup.ProgressStreams(os.Stdout),
+		optup.ErrorProgressStreams(os.Stdout),
+		optup.DebugLogging(debugOptions),
+		optup.SuppressProgress(),
+	)
 	if opts.Mode == CaptureImports {
 		// Always attempt to export state and write import file, even if Up() failed.
 		// This allows users to get a partial import file as a starting point.
