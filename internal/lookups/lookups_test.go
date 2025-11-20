@@ -82,6 +82,25 @@ func Test_renderResourceModel(t *testing.T) {
 			"ApiId": "1234",
 		}, actual)
 	})
+
+	t.Run("falls back to original casing when transformed key missing", func(t *testing.T) {
+		actual, err := renderResourceModel(
+			[]resource.PropertyKey{
+				resource.PropertyKey("policyName"),
+				resource.PropertyKey("resourceId"),
+			},
+			map[string]interface{}{
+				"policyName": "MyPolicy",
+				"resourceId": "service/app/name",
+			},
+			func(s string) string { return naming.ToCfnName(s, map[string]string{}) },
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"PolicyName": "MyPolicy",
+			"ResourceId": "service/app/name",
+		}, actual)
+	})
 }
 
 func Test_getPrimaryIdentifiers(t *testing.T) {

@@ -77,6 +77,15 @@ func renderResourceModel(idParts []resource.PropertyKey, props map[string]any, r
 			} else {
 				return nil, fmt.Errorf("expected id property %q to be a string; got %v", cfnName, prop)
 			}
+			continue
+		}
+		// Fallback to original key casing if the transformed name is absent.
+		if prop, ok := props[string(part)]; ok {
+			if val, ok := prop.(string); ok {
+				model[cfnName] = val
+			} else {
+				return nil, fmt.Errorf("expected id property %q to be a string; got %v", cfnName, prop)
+			}
 		}
 	}
 	return model, nil

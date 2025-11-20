@@ -39,6 +39,7 @@ func main() {
 	var keepImportState = flag.Bool("keep-import-state", false, "Keep the temporary local backend after capture runs finish")
 	var localStackFile = flag.String("local-stack-file", "", "Path to the local backend file to re-use when capturing imports")
 	var cdkApp = flag.String("cdk-app", "", "Path to the CDK application to import")
+	var verbose = flag.Int("verbose", 0, "Enable verbose logging (0-9)")
 	flag.Parse()
 
 	if os.Getenv("AWS_REGION") == "" && os.Getenv("AWS_DEFAULT_REGION") == "" {
@@ -126,6 +127,7 @@ func main() {
 		KeepImportState: keepState,
 		LocalStackFile:  localStack,
 		StackNames:      stacks,
+		Verbose:         *verbose,
 	}
 
 	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options); err != nil {

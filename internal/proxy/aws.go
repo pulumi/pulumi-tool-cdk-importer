@@ -79,7 +79,7 @@ func (i *awsInterceptor) create(
 		return nil, err
 	}
 
-	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", resourceType, string(prim), string(urn))
+	glog.V(4).Infof("Importing resourceType %s with ID %s for URN %s ...", resourceType, string(prim), string(urn))
 	if i.mode == CaptureImports && i.collector != nil {
 		i.collector.Append(Capture{
 			Type:        resourceType,
@@ -94,6 +94,9 @@ func (i *awsInterceptor) create(
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Import failed: %w", err)
+	}
+	if rresp.Id == "" {
+		return nil, fmt.Errorf("Don't have an ID!: %s %s %s", resourceType, string(prim), string(urn))
 	}
 	return &pulumirpc.CreateResponse{
 		Id:         rresp.Id,

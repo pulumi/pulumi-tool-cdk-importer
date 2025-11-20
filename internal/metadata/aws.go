@@ -74,7 +74,8 @@ var awsClassicMetadata *awsClassicMetadataSource
 func init() {
 	awsClassicMetadata = &awsClassicMetadataSource{
 		separator: map[string]string{
-			"aws:iam/rolePolicy:RolePolicy": ":",
+			"aws:iam/rolePolicy:RolePolicy":                                ":",
+			"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": ":",
 		},
 		cloudApiMetadata: metadata.CloudAPIMetadata{
 			Resources: map[string]metadata.CloudAPIResource{
@@ -82,7 +83,7 @@ func init() {
 					CfType: "AWS::ApiGatewayV2::Stage",
 					PrimaryIdentifier: []string{
 						"apiId",
-						"id",
+						"name",
 					},
 				},
 				"aws:apigatewayv2/integration:Integration": {
@@ -96,6 +97,12 @@ func init() {
 					CfType: "AWS::IAM::Policy",
 					PrimaryIdentifier: []string{
 						"arn",
+					},
+				},
+				"aws:servicediscovery/service:Service": {
+					CfType: "AWS::ServiceDiscovery::Service",
+					PrimaryIdentifier: []string{
+						"id",
 					},
 				},
 				"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": {

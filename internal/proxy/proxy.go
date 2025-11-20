@@ -64,6 +64,7 @@ type RunOptions struct {
 	KeepImportState bool
 	LocalStackFile  string
 	StackNames      []string
+	Verbose         int
 }
 
 type pulumiTest struct {
@@ -127,10 +128,17 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		defer cleanup()
 	}
 	level := uint(1)
-	logger.Println("Importing stack...")
-	_, upErr := stack.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debug.LoggingOptions{
+	debugOptions := debug.LoggingOptions{
 		LogLevel: &level,
-	}))
+	}
+	if opts.Verbose > 0 {
+		level = uint(opts.Verbose)
+		debugOptions.FlowToPlugins = true
+		debugOptions.LogToStdErr = true
+		debugOptions.Debug = true
+	}
+	logger.Println("Importing stack...")
+	_, upErr := stack.Up(ctx, optup.ContinueOnError(), optup.ProgressStreams(os.Stdout), optup.ErrorProgressStreams(os.Stdout), optup.DebugLogging(debugOptions))
 	if opts.Mode == CaptureImports {
 		// Always attempt to export state and write import file, even if Up() failed.
 		// This allows users to get a partial import file as a starting point.

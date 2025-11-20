@@ -64,7 +64,7 @@ func (a *awsLookups) FindPrimaryResourceID(
 			return "", err
 		}
 		separator := metadataSource.Separator(resourceToken)
-		return a.findAwsCompositeId(logicalID, resourceModel, separator)
+		return a.findAwsCompositeId(logicalID, idParts, resourceModel, separator)
 	}
 }
 
@@ -79,26 +79,32 @@ func (a *awsLookups) getArnForResource(resourceType common.ResourceType, name st
 	return "", fmt.Errorf("Arn lookup for resourceType %q not supported", resourceType)
 }
 
-// renderAwsImportId will create a AWS import id value.
-// AWS import ids are concatenated with the given separator (usually '/' but some resources use ':')
-func renderAwsImportId(id string, resourceModel map[string]string, separator string) string {
-	prefix := ""
-	for _, value := range resourceModel {
-		prefix = fmt.Sprintf("%s%s%s", prefix, value, separator)
-	}
-	return fmt.Sprintf("%s%s", prefix, id)
-}
-
 // findAwsCompositeId returns a lookup id for an AWS resource where
 // the lookup id contains multiple values
 func (a *awsLookups) findAwsCompositeId(
 	logicalID common.LogicalResourceID,
+	idParts []resource.PropertyKey,
 	resourceModel map[string]string,
 	separator string,
 ) (common.PrimaryResourceID, error) {
 	if r, ok := a.cfnStackResources[logicalID]; ok {
-		suffix := string(r.PhysicalID)
-		return common.PrimaryResourceID(renderAwsImportId(suffix, resourceModel, separator)), nil
+		physicalID := string(r.PhysicalID)
+
+		parts := make([]string, 0, len(idParts))
+		for _, idPart := range idParts {
+			if val, ok := resourceModel[string(idPart)]; ok {
+				parts = append(parts, val)
+				continue
+			}
+			if physicalID != "" {
+				parts = append(parts, physicalID)
+				physicalID = ""
+				continue
+			}
+			return "", fmt.Errorf("Couldn't find an import id for resource with logicalID %q", logicalID)
+		}
+
+		return common.PrimaryResourceID(strings.Join(parts, separator)), nil
 	}
 	return "", fmt.Errorf("Couldn't find an import id for resource with logicalID %q", logicalID)
 }
