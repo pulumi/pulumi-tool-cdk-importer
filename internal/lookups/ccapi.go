@@ -112,6 +112,7 @@ func (c *ccapiLookups) FindPrimaryResourceID(
 	case 1:
 		return c.findOwnNativeId(ctx, resourceType, logicalID, idParts[0])
 	default:
+		fmt.Printf("Rendering Resource Models for %s - %s: Parts: %v", resourceType, logicalID, idParts)
 		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
 			return naming.ToCfnName(string(s), nil)
 		})
@@ -204,6 +205,7 @@ func (c *ccapiLookups) findResourceIdentifier(
 ) (common.PrimaryResourceID, error) {
 	resources, err := c.listResources(ctx, resourceType, resourceModel)
 	if err != nil {
+		fmt.Printf("Error listing resource: %s, %v, %v\n", resourceType, resourceModel, err)
 		var uae *types.UnsupportedActionException
 		var invalid *types.InvalidRequestException
 		if errors.As(err, &uae) {
@@ -234,6 +236,7 @@ func (c *ccapiLookups) findResourceIdentifier(
 			}
 
 			if missingProperty != "" {
+				fmt.Printf("Found missing property for %s %s: %s", resourceType, logicalID, missingProperty)
 				// create a correct resource model with the missing property
 				resourceModel, err = renderResourceModel([]resource.PropertyKey{
 					resource.PropertyKey(missingProperty),
@@ -243,11 +246,17 @@ func (c *ccapiLookups) findResourceIdentifier(
 				if err != nil {
 					return "", fmt.Errorf("Error rendering resource model: %w", err)
 				}
+				if len(resourceModel) == 0 {
+					if derived := deriveMissingProperty(resourceType, missingProperty, c.cfnStackResources[logicalID].Props); len(derived) > 0 {
+						resourceModel = derived
+					} else {
+						return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v Props: %v: MissingProperty %s", resourceType, resourceModel, c.cfnStackResources[logicalID].Props, missingProperty)
+					}
+				}
 				// run it again with the new resource model
 				return c.findResourceIdentifier(ctx, resourceType, logicalID, suffix, resourceModel)
-			} else {
-				return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v Props: %v: MissingProperty %s:  %w", resourceType, resourceModel, c.cfnStackResources[logicalID].Props, missingProperty, err)
 			}
+			return "", fmt.Errorf("Error finding resource of type %s with resourceModel: %v Props: %v: MissingProperty %s:  %w", resourceType, resourceModel, c.cfnStackResources[logicalID].Props, missingProperty, err)
 		} else {
 			return "", fmt.Errorf("Unknown error: Error finding resource of type %s with resourceModel: %v Props: %v: %w", resourceType, resourceModel, c.cfnStackResources[logicalID].Props, err)
 		}
@@ -367,4 +376,26 @@ func toAPIError(err error) error {
 		Code:    code,
 		Message: err.Error(),
 	}
+}
+
+func deriveMissingProperty(resourceType common.ResourceType, missingProperty string, props map[string]any) map[string]string {
+	if resourceType == "AWS::ApplicationAutoScaling::ScalingPolicy" && strings.EqualFold(missingProperty, "ServiceNamespace") {
+		if sd, ok := props["ScalableDimension"].(string); ok {
+			parts := strings.SplitN(sd, ":", 2)
+			if len(parts) > 0 && parts[0] != "" {
+				return map[string]string{"ServiceNamespace": parts[0]}
+			}
+		}
+		if stid, ok := props["ScalingTargetId"].(string); ok {
+			segments := strings.Split(stid, "|")
+			if len(segments) > 0 {
+				candidate := segments[len(segments)-1]
+				candidate = strings.TrimSpace(candidate)
+				if candidate != "" {
+					return map[string]string{"ServiceNamespace": candidate}
+				}
+			}
+		}
+	}
+	return nil
 }

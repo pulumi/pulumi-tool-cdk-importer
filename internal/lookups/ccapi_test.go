@@ -233,7 +233,6 @@ func TestFindPrimaryResourceID(t *testing.T) {
 			"PolicyName":        "MyPolicy",
 			"ResourceId":        "service/myCluster/myService",
 			"ScalableDimension": "ecs:service:DesiredCount",
-			"ServiceNamespace":  "ecs",
 		}
 
 		ccapiClient := &mockCCAPIClient{
