@@ -95,6 +95,9 @@ Some resources require properties in the CCAPI `ListResources` call that aren't 
 4. **Retry the call** with the new model
 5. **Return the identifier** from the successful response
 
+In rare cases the missing property isn't in the inputs at all. We attempt to derive it from other fields when we can:
+- `AWS::ApplicationAutoScaling::ScalingPolicy`: if `ServiceNamespace` is missing, we derive it from `ScalableDimension` (e.g., `ecs:service:DesiredCount` → `ecs`) or, failing that, the trailing segment of `ScalingTargetId`.
+
 **Example Error Messages:**
 ```
 Missing Or Invalid ResourceModel property in AWS::ElasticLoadBalancingV2::Listener 
