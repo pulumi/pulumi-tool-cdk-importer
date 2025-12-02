@@ -19,7 +19,11 @@ require (
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 )
 
-require github.com/pulumi/pulumi/sdk/v3 v3.206.0
+require (
+	github.com/aws/smithy-go v1.22.0
+	github.com/pulumi/pulumi/sdk/v3 v3.206.0
+	github.com/spf13/cobra v1.10.1
+)
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
@@ -48,7 +52,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.22.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.4 // indirect
-	github.com/aws/smithy-go v1.22.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/charmbracelet/bubbles v0.16.1 // indirect
@@ -117,7 +120,6 @@ require (
 	github.com/segmentio/encoding v0.3.5 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.0 // indirect
-	github.com/spf13/cobra v1.10.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
 	github.com/tidwall/gjson v1.17.0 // indirect

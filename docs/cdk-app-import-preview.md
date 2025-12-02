@@ -1,5 +1,7 @@
 # CDK App Import via `pulumi preview --import-file`
 
+> Legacy note: the `--cdk-app` flow has been removed in favor of operating on existing Pulumi programs. This document is retained for historical context only.
+
 Design notes for generating a complete `import.json` when `--cdk-app` is used by first asking Pulumi to emit the placeholder manifest, then enriching it with data we can derive.
 
 ## Goals

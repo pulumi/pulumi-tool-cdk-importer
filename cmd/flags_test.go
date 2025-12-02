@@ -1,8 +1,6 @@
-package main
+package cmd
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestStringSlice_Set(t *testing.T) {
 	tests := []struct {

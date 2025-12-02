@@ -14,77 +14,58 @@ pulumi plugin install tool cdk-importer
 
 ## Usage
 
-``` shell
-❯ pulumi plugin run cdk-importer -- --help
-Usage of pulumi-tool-cdk-importer:
-  -import-file string
-    	Write the Pulumi bulk import file produced from the CloudFormation stack to this path instead of mutating Pulumi state
-  -import
-    	Import resources into the currently selected Pulumi stack (requires -cdk-app; can be combined with -import-file)
-  -keep-import-state
-    	Retain the temporary local backend used when generating an import file (defaults to removing it)
-  -local-stack-file string
-    	Optional path to a local backend file to reuse while generating import files
-  -skip-create
-    	Skip creating special CDK asset helper resources (implied when -import-file is provided)
-  -stack string
-    	CloudFormation stack name to import (can be specified multiple times or comma-separated)
-```
+Run `pulumi plugin run cdk-importer -- --help` to see the command tree. The CLI now uses Cobra with two primary flows:
 
-To migrate your existing CDK infrastructure to `pulumi-cdk`:
+- `runtime`: Import from the pulumi-cdk runtime program in the current directory (creates allowed). Use this when you already have a Pulumi program embedding your CDK app.
+- `program import`: Import into the selected stack using an existing Pulumi program located elsewhere.
+- `program iterate`: Capture mode against an existing Pulumi program using a local backend and import file for iterative refinement.
 
-1. Follow instructions in the [pulumi/pulumi-cdk](https://github.com/pulumi/pulumi-cdk) repo to embed your CDK stacks in a Pulumi program
-
-1. Instead of running `pulumi up`, run `pulumi plugin run cdk-importer -- -stack $CFStackName`. This will import the state of the 
-  infrastructure defined by your CDK stack into Pulumi state. This operation is read-only (with the below exceptions) and should not modify any resources.
-  
-  You can also import multiple stacks at once:
-  ```shell
-  pulumi plugin run cdk-importer -- -stack Stack1 -stack Stack2
-  # or
-  pulumi plugin run cdk-importer -- -stack Stack1,Stack2
-  ```
-
-1. To verify that everything worked as expected, run `pulumi preview`. It should show no changes.
-
-### CDK Integration
-
-The tool can also directly integrate with a CDK application to generate the import file in a single step. This is done using the `-cdk-app` flag.
+Examples:
 
 ```shell
-pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack my-stack
-# Multiple stacks
-pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack Stack1,Stack2
+# Runtime mode in the current directory (imports into selected stack)
+pulumi plugin run cdk-importer -- runtime --stack Stack1
+
+# Runtime mode and also emit an import file based on the selected stack
+pulumi plugin run cdk-importer -- runtime --stack Stack1 --import-file ./import.json
+
+# Program mode: import into selected stack using a generated Pulumi program
+pulumi plugin run cdk-importer -- program import --program-dir ./generated --stack Stack1
+
+# Program mode, iterative capture with local backend + import file
+pulumi plugin run cdk-importer -- program iterate \
+  --program-dir ./generated \
+  --stack Stack1 \
+  --import-file ./import.json \
+  --local-stack-file ./capture-state \
+  --keep-import-state
 ```
 
-To import directly into your currently selected Pulumi stack instead of generating an import file, combine `-cdk-app` with `-import`. You may also supply `-import-file` to emit an import spec alongside the in-place import (useful for auditing or future migrations). Note that `-local-stack-file` and `-keep-import-state` are not available when `-import` is set because the command uses the selected stack rather than a temporary backend, and the generated Pulumi program is written to a temp directory under the current working directory instead of the OS tempdir so you can inspect or reuse it.
+### Runtime mode
 
-When `-cdk-app` is used, the tool performs the following steps:
+- Command: `runtime`
+- Flags: `--stack` (repeatable), `--import-file` (optional), `--skip-create` (optional), `--verbose`
+- Behavior: Uses the selected Pulumi stack and current working directory. If `--import-file` is provided, the tool imports into the selected stack and then exports state to produce a bulk import file (no local backend).
 
-1.  **Bundled cdk2pulumi**: It extracts an embedded version of `cdk2pulumi` (a tool that converts CDK apps to Pulumi programs).
-2.  **Conversion**: It runs `cdk2pulumi` against the provided CDK application directory to generate a `Pulumi.yaml` and other necessary files in a temporary directory.
-3.  **Import**: It then runs the import process using the generated Pulumi program as the source.
+### Program mode
 
-**Implied Flags**:
+- Command: `program import`
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional), `--skip-create` (optional), `--verbose`
+- Behavior: Changes into `--program-dir`, runs against the selected stack. If `--import-file` is provided, the tool imports into the selected stack and exports state to produce a bulk import file.
 
-When using `-cdk-app` without `-import`, the following flags are automatically set (unless you explicitly override them):
+### Program iterate (capture mode)
 
-*   `-import-file`: Defaults to `import.json`. This enables "capture mode".
-*   `-skip-create`: Defaults to `true`.
-*   `-keep-import-state`: Defaults to `true`.
-*   `-local-stack-file`: Defaults to `stack-state.json`.
+- Command: `program iterate`
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (required), `--local-stack-file` (optional), `--keep-import-state` (optional), `--verbose`
+- Behavior: Runs against a local file backend (optionally reusing `--local-stack-file`), forces `skip-create`, seeds the import file with `pulumi preview --import-file`, and writes the enriched import file. Use this for iterative capture without touching your real stack.
 
-This means a single command will convert your CDK app, capture the resource IDs from your deployed stack, and generate an `import.json` file ready for use with `pulumi import`.
+### Bulk import files
 
-### Generate a bulk import file
+`--import-file` is supported in all commands:
+- In `runtime` and `program import`, it writes an import spec after importing into the selected stack.
+- In `program iterate`, it enables capture mode and is required.
 
-If you would rather produce a Pulumi [bulk import](https://www.pulumi.com/docs/iac/guides/migration/import/#bulk-import) spec (e.g., to pair with `pulumi import --file` or `--generate-code`), pass the `--import-file` flag:
-
-```shell
-pulumi plugin run cdk-importer -- -stack my-stack --import-file ./import.json
-```
-
-When `-import-file` is supplied, the tool spins up a throwaway local backend, runs against that stack without mutating your real state, and exports the results into an enriched import file. The output includes:
+The output includes:
 
 - `nameTable` entries for every Pulumi resource, which lets `pulumi import --file` wire parents and providers correctly.
 - Full AWS resource metadata (type, logical name, provider reference, component bit, provider version).
@@ -96,34 +77,14 @@ The resulting `import.json` contains every CloudFormation resource Pulumi can ma
 
 **The tool will write an import file even if errors occur during execution.** This allows you to get a starting point (a partial import file) and iteratively improve it. The command will still exit with an error code, but the import file will contain whatever resources were successfully processed.
 
-To build up your import file incrementally across multiple runs:
-
-1. Use `-local-stack-file /path/to/backend` to specify a persistent local backend
-2. Use `-keep-import-state` to prevent cleanup of that backend after each run
-3. Re-run the command as needed - each run will update the local stack state and regenerate the import file
-
-Example iterative workflow:
-```shell
-# First run - may fail partway through
-pulumi plugin run cdk-importer -- -stack my-stack \
-  --import-file ./import.json \
-  --local-stack-file ./capture-state \
-  --keep-import-state
-
-# Fix issues, then re-run with the same flags to continue building state
-pulumi plugin run cdk-importer -- -stack my-stack \
-  --import-file ./import.json \
-  --local-stack-file ./capture-state \
-  --keep-import-state
-```
+To build up your import file incrementally across multiple runs, use `program iterate` with `--local-stack-file` and `--keep-import-state` so the same local backend is reused.
 
 #### Capture-mode options
 
-- `-skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is automatically turned on for capture mode, but you can also enable it manually when experimenting.
-- `-keep-import-state`: Keeps the temporary local backend directory so you can inspect the `Pulumi.dev.yaml`, exported stack files, or reuse them across multiple runs.
-- `-local-stack-file`: Provides an explicit backend file path to reuse instead of letting the tool create a new temp directory. Combine this with `-keep-import-state` for deterministic CI runs.
-- `-cdk-skip-custom`: When using `--cdk-app`, pass `--skip-custom` to cdk2pulumi to omit custom resources during synthesis.
-- When `-import-file` is set (with or without `--cdk-app`), the tool first runs `pulumi preview --import-file <path>` in the current working directory to generate a placeholder skeleton, then enriches it with captured/state data. The `-import-file` path is resolved relative to your invocation directory unless absolute.
+- `--skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is automatically turned on for `program iterate`, but you can also enable it manually when experimenting.
+- `--keep-import-state`: Keeps the temporary local backend directory so you can inspect the `Pulumi.dev.yaml`, exported stack files, or reuse them across multiple runs.
+- `--local-stack-file`: Provides an explicit backend file path to reuse instead of letting the tool create a new temp directory. Combine this with `--keep-import-state` for deterministic CI runs.
+- In `program iterate`, the tool first runs `pulumi preview --import-file <path>` in the program directory to generate a placeholder skeleton, then enriches it with captured/state data. The `--import-file` and backend paths are resolved relative to your invocation directory unless absolute.
 
 ### Unsupported Resources
 
