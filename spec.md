@@ -28,14 +28,14 @@ rich Pulumi import files without mutating user stacks.
       mode leaves the local backend files intact after exiting.
 - [x] Add `-local-stack-file` string flag so users can re-use a specific local
       backend file instead of a throwaway temp dir.
-- [x] Update `main.go` to enforce `-stack` and propagate the new options through
-      `proxy.RunOptions`.
+- [x] Ensure CLI parsing (now Cobra-based) enforces `-stack` and propagates the
+      options through `proxy.RunOptions`.
 
 ### Stack/Backend Lifecycle for `-import-file`
 
 - [x] When `-import-file` is not specified, continue using the currently
       selected stack (no backend changes).
-- [ ] When `-import-file` **is** specified:
+- [x] When `-import-file` **is** specified:
   - [x] Create (or re-use) a local backend rooted at the path specified via
         `-local-stack-file` (or a temp dir if unspecified).
   - [x] Create a deterministic stack name (e.g., `capture-<stackRef>` or
@@ -79,7 +79,7 @@ rich Pulumi import files without mutating user stacks.
       calls yet still logs/skips entries.
 - [ ] Extend existing capture-mode tests to exercise the backend export path
       and confirm the emitted JSON includes the new metadata fields.
-- [ ] Update `README.md` (and AGENTS.md if needed) to document the new flags,
+- [x] Update `README.md` (and AGENTS.md if needed) to document the new flags,
       the optional persistent local stack file, and expectations for cleaning up
       temporary state.
 
