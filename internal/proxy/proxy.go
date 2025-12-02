@@ -88,6 +88,9 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		return fmt.Errorf("import file path is required when capturing imports")
 	}
 	collector := opts.Collector
+	if collector == nil && opts.ImportFilePath != "" {
+		collector = NewCaptureCollector()
+	}
 	if opts.Mode == CaptureImports && collector == nil {
 		collector = NewCaptureCollector()
 	}
@@ -180,6 +183,15 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		// Return the original Up error if it occurred, so the command exits with error code
 		if upErr != nil {
 			return upErr
+		}
+	}
+	if upErr == nil && opts.Mode == RunPulumi && opts.ImportFilePath != "" {
+		state, exportErr := stack.Export(ctx)
+		if exportErr != nil {
+			return fmt.Errorf("exporting stack state for import file: %w", exportErr)
+		}
+		if err := finalizeCapture(logger, collector, opts.ImportFilePath, state, false, nil); err != nil {
+			return err
 		}
 	}
 	if upErr != nil {

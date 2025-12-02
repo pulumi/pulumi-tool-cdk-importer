@@ -9,7 +9,9 @@ import (
 
 // RunCDK2Pulumi runs the provided cdk2pulumi binary content on the given app path.
 // It returns the path to the generated Pulumi.yaml (which is the output directory).
-func RunCDK2Pulumi(binaryContent []byte, appPath string, stackNames []string, skipCustom bool) (string, error) {
+// If outputParentDir is set, the generated program will be placed in a temporary directory
+// under that parent; otherwise a system temp directory is used.
+func RunCDK2Pulumi(binaryContent []byte, appPath string, stackNames []string, skipCustom bool, outputParentDir string) (string, error) {
 	// Create a temporary file for the binary
 	tmpFile, err := ioutil.TempFile("", "cdk2pulumi-*")
 	if err != nil {
@@ -31,7 +33,7 @@ func RunCDK2Pulumi(binaryContent []byte, appPath string, stackNames []string, sk
 	}
 
 	// Create a temporary directory for the output
-	outputDir, err := ioutil.TempDir("", "cdk2pulumi-output-*")
+	outputDir, err := ioutil.TempDir(outputParentDir, "cdk2pulumi-output-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create output directory: %w", err)
 	}

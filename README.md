@@ -19,6 +19,8 @@ pulumi plugin install tool cdk-importer
 Usage of pulumi-tool-cdk-importer:
   -import-file string
     	Write the Pulumi bulk import file produced from the CloudFormation stack to this path instead of mutating Pulumi state
+  -import
+    	Import resources into the currently selected Pulumi stack (requires -cdk-app; can be combined with -import-file)
   -keep-import-state
     	Retain the temporary local backend used when generating an import file (defaults to removing it)
   -local-stack-file string
@@ -55,6 +57,8 @@ pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack my-stack
 pulumi plugin run cdk-importer -- -cdk-app /path/to/cdk/app -stack Stack1,Stack2
 ```
 
+To import directly into your currently selected Pulumi stack instead of generating an import file, combine `-cdk-app` with `-import`. You may also supply `-import-file` to emit an import spec alongside the in-place import (useful for auditing or future migrations). Note that `-local-stack-file` and `-keep-import-state` are not available when `-import` is set because the command uses the selected stack rather than a temporary backend, and the generated Pulumi program is written to a temp directory under the current working directory instead of the OS tempdir so you can inspect or reuse it.
+
 When `-cdk-app` is used, the tool performs the following steps:
 
 1.  **Bundled cdk2pulumi**: It extracts an embedded version of `cdk2pulumi` (a tool that converts CDK apps to Pulumi programs).
@@ -63,7 +67,7 @@ When `-cdk-app` is used, the tool performs the following steps:
 
 **Implied Flags**:
 
-When using `-cdk-app`, the following flags are automatically set (unless you explicitly override them):
+When using `-cdk-app` without `-import`, the following flags are automatically set (unless you explicitly override them):
 
 *   `-import-file`: Defaults to `import.json`. This enables "capture mode".
 *   `-skip-create`: Defaults to `true`.
