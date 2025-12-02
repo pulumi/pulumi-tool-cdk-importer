@@ -74,11 +74,13 @@ func (i *awsCCApiInterceptor) create(
 	}
 	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", urn.Type().String(), string(prim), string(urn))
 	if i.mode == CaptureImports && i.collector != nil {
+		properties := collectPropertyKeys(inputs)
 		i.collector.Append(Capture{
 			Type:        string(urn.Type()),
 			Name:        string(urn.Name()),
 			LogicalName: string(logical),
 			ID:          string(prim),
+			Properties:  properties,
 		})
 	}
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{

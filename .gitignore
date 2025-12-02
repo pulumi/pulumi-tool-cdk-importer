@@ -30,3 +30,4 @@ bin
 coverage.txt
 goreleaser
 deps
+import.json

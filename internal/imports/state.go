@@ -79,7 +79,7 @@ func mergeStateAndCaptures(deployment *apitype.DeploymentV3, captures []CaptureM
 			return nil, err
 		}
 
-		providerName, version, err := resolveProvider(res.Provider, providers)
+		_, version, err := resolveProvider(res.Provider, providers)
 		if err != nil {
 			return nil, err
 		}
@@ -88,14 +88,17 @@ func mergeStateAndCaptures(deployment *apitype.DeploymentV3, captures []CaptureM
 		capture := captureIndex[key]
 
 		logical := name
-		id := string(res.ID)
+		id := capture.ID
 		props := []string(nil)
 
 		if capture.LogicalName != "" {
 			logical = capture.LogicalName
 		}
+		if id == "" || id == placeholderID {
+			id = string(res.ID)
+		}
 		if id == "" {
-			id = capture.ID
+			id = placeholderID
 		}
 		if len(capture.Properties) > 0 {
 			props = cloneStrings(capture.Properties)
@@ -110,7 +113,6 @@ func mergeStateAndCaptures(deployment *apitype.DeploymentV3, captures []CaptureM
 			Component:   !res.Custom,
 			Version:     version,
 			Parent:      parentName,
-			Provider:    providerName,
 		})
 	}
 

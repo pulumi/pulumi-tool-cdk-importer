@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/cdk"
@@ -39,8 +40,14 @@ func main() {
 	var keepImportState = flag.Bool("keep-import-state", false, "Keep the temporary local backend after capture runs finish")
 	var localStackFile = flag.String("local-stack-file", "", "Path to the local backend file to re-use when capturing imports")
 	var cdkApp = flag.String("cdk-app", "", "Path to the CDK application to import")
+	var cdkSkipCustom = flag.Bool("cdk-skip-custom", false, "Pass through to cdk2pulumi to skip custom resources")
 	var verbose = flag.Int("verbose", 0, "Enable verbose logging (0-9)")
 	flag.Parse()
+
+	invocationDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("failed to get working directory: %v", err)
+	}
 
 	if os.Getenv("AWS_REGION") == "" && os.Getenv("AWS_DEFAULT_REGION") == "" {
 		log.Fatal("AWS_REGION or AWS_DEFAULT_REGION environment variable must be set")
@@ -49,7 +56,9 @@ func main() {
 	if *cdkApp != "" {
 		// Apply defaults for cdk-app mode if not explicitly set
 		if *importFile == "" {
-			*importFile = "import.json"
+			*importFile = filepath.Join(invocationDir, "import.json")
+		} else if !filepath.IsAbs(*importFile) {
+			*importFile = filepath.Join(invocationDir, *importFile)
 		}
 		// We can't easily check if bool flags were set by user or default,
 		// but for these specific flags, if cdk-app is set, we want to enforce these defaults
@@ -72,8 +81,7 @@ func main() {
 		if *localStackFile == "" {
 			*localStackFile = "stack-state.json"
 		}
-
-		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp, stacks)
+		wd, err := cdk.RunCDK2Pulumi(cdk2pulumiBinary, *cdkApp, stacks, *cdkSkipCustom)
 		if err != nil {
 			log.Fatalf("failed to run cdk2pulumi: %v", err)
 		}
@@ -121,13 +129,14 @@ func main() {
 	}
 
 	options := proxy.RunOptions{
-		Mode:            mode,
-		ImportFilePath:  importPath,
-		SkipCreate:      skipCreateMode,
-		KeepImportState: keepState,
-		LocalStackFile:  localStack,
-		StackNames:      stacks,
-		Verbose:         *verbose,
+		Mode:             mode,
+		ImportFilePath:   importPath,
+		SkipCreate:       skipCreateMode,
+		KeepImportState:  keepState,
+		LocalStackFile:   localStack,
+		StackNames:       stacks,
+		Verbose:          *verbose,
+		UsePreviewImport: importPath != "",
 	}
 
 	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options); err != nil {

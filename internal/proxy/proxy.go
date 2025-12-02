@@ -29,6 +29,7 @@ import (
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optremove"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
@@ -57,14 +58,15 @@ const (
 
 // RunOptions surfaces CLI decisions (mode, import path) into the proxy layer.
 type RunOptions struct {
-	Mode            RunMode
-	ImportFilePath  string
-	Collector       *CaptureCollector
-	SkipCreate      bool
-	KeepImportState bool
-	LocalStackFile  string
-	StackNames      []string
-	Verbose         int
+	Mode             RunMode
+	ImportFilePath   string
+	Collector        *CaptureCollector
+	SkipCreate       bool
+	KeepImportState  bool
+	LocalStackFile   string
+	StackNames       []string
+	Verbose          int
+	UsePreviewImport bool
 }
 
 type pulumiTest struct {
@@ -137,6 +139,13 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		debugOptions.LogToStdErr = true
 		debugOptions.Debug = true
 	}
+	var skeleton *imports.File
+	if opts.Mode == CaptureImports && opts.UsePreviewImport {
+		skeleton, err = runPreviewForImportFile(ctx, logger, stack, opts.ImportFilePath, debugOptions)
+		if err != nil {
+			return err
+		}
+	}
 	logger.Println("Importing stack...")
 	_, upErr := stack.Up(ctx,
 		optup.ContinueOnError(),
@@ -159,7 +168,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 			logger.Printf("Warning: pulumi up encountered errors, writing partial import file")
 		}
 
-		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil)
+		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil, skeleton)
 		if finalizeErr != nil {
 			logger.Printf("Error writing import file: %v", finalizeErr)
 			// Return the finalize error if Up succeeded, otherwise return Up error
@@ -304,7 +313,35 @@ func cloneEnv(env map[string]string) map[string]string {
 	return dup
 }
 
-func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool) error {
+func runPreviewForImportFile(ctx context.Context, logger *log.Logger, stack auto.Stack, path string, debugOptions debug.LoggingOptions) (*imports.File, error) {
+	if path == "" {
+		return nil, fmt.Errorf("import file path is required for preview")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("ensuring import file directory: %w", err)
+	}
+
+	logger.Printf("Running pulumi preview to generate import skeleton at %s", path)
+	_, err := stack.Preview(
+		ctx,
+		optpreview.ImportFile(path),
+		optpreview.DebugLogging(debugOptions),
+		optpreview.ProgressStreams(os.Stdout),
+		optpreview.ErrorProgressStreams(os.Stdout),
+		optpreview.SuppressProgress(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("pulumi preview for import file: %w", err)
+	}
+
+	file, err := imports.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading previewed import file %q: %w", path, err)
+	}
+	return file, nil
+}
+
+func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, skeleton *imports.File) error {
 	if len(deployment.Deployment) == 0 {
 		logger.Println("Exported stack deployment is empty; capture file will only include intercepted resources")
 	} else {
@@ -320,6 +357,9 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 		summary = collector.Summary()
 		entries = collector.Results()
 	}
+	if skeleton != nil {
+		logger.Printf("Merging preview import skeleton with %d captured resources", len(entries))
+	}
 	captures := make([]imports.CaptureMetadata, 0, len(entries))
 	for _, entry := range entries {
 		captures = append(captures, imports.CaptureMetadata{
@@ -333,6 +373,9 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	file, err := imports.BuildFileFromDeployment(deployment, captures)
 	if err != nil {
 		return err
+	}
+	if skeleton != nil {
+		file = imports.MergeWithSkeleton(skeleton, file)
 	}
 	if err := imports.WriteFile(path, file); err != nil {
 		return err

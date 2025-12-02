@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -80,14 +81,6 @@ func (i *awsInterceptor) create(
 	}
 
 	glog.V(4).Infof("Importing resourceType %s with ID %s for URN %s ...", resourceType, string(prim), string(urn))
-	if i.mode == CaptureImports && i.collector != nil {
-		i.collector.Append(Capture{
-			Type:        resourceType,
-			Name:        string(urn.Name()),
-			LogicalName: string(logical),
-			ID:          string(prim),
-		})
-	}
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
 		Id:  string(prim),
 		Urn: string(urn),
@@ -98,6 +91,18 @@ func (i *awsInterceptor) create(
 	if rresp.Id == "" {
 		return nil, fmt.Errorf("Don't have an ID!: %s %s %s", resourceType, string(prim), string(urn))
 	}
+
+	if i.mode == CaptureImports && i.collector != nil {
+		properties := collectPropertyKeys(inputs)
+		i.collector.Append(Capture{
+			Type:        resourceType,
+			Name:        string(urn.Name()),
+			LogicalName: string(logical),
+			ID:          string(prim),
+			Properties:  properties,
+		})
+	}
+
 	return &pulumirpc.CreateResponse{
 		Id:         rresp.Id,
 		Properties: rresp.Properties,
@@ -118,4 +123,16 @@ func (i *awsInterceptor) stubSkippedCreate(resourceType string, urn resource.URN
 		Id:         stubID,
 		Properties: req.GetProperties(),
 	}, nil
+}
+
+func collectPropertyKeys(props resource.PropertyMap) []string {
+	if len(props) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, string(k))
+	}
+	sort.Strings(keys)
+	return keys
 }

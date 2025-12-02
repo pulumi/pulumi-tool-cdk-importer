@@ -66,7 +66,7 @@ func TestBuildFileFromDeploymentMergesStateAndCapture(t *testing.T) {
 	assert.Equal(t, []string{"tags"}, res.Properties)
 	assert.False(t, res.Component)
 	assert.Equal(t, "component", res.Parent)
-	assert.Equal(t, "default", res.Provider)
+	assert.Equal(t, "", res.Provider)
 	assert.Equal(t, "7.11.0", res.Version)
 }
 
@@ -85,4 +85,51 @@ func TestBuildFileFromDeploymentWithoutStateFallsBackToCaptures(t *testing.T) {
 	assert.Equal(t, "a", file.Resources[0].Name)
 	assert.Equal(t, "LogicalA", file.Resources[0].LogicalName)
 	assert.Equal(t, "one", file.Resources[0].ID)
+}
+
+func TestBuildFilePrefersCaptureIDWhenStateIDDiffers(t *testing.T) {
+	t.Parallel()
+
+	stackURN := resource.URN("urn:pulumi:dev::proj::pulumi:pulumi:Stack::proj-dev")
+	stageURN := resource.URN("urn:pulumi:dev::proj::aws:apigatewayv2/stage:Stage::stage")
+	providerURN := resource.URN("urn:pulumi:dev::proj::pulumi:providers:aws::default")
+
+	state := apitype.DeploymentV3{
+		Resources: []apitype.ResourceV3{
+			{URN: stackURN, Type: tokens.Type("pulumi:pulumi:Stack")},
+			{
+				URN:      providerURN,
+				Type:     tokens.Type("pulumi:providers:aws"),
+				Custom:   true,
+				Parent:   stackURN,
+				Inputs:   map[string]any{"version": "7.11.0"},
+				Outputs:  map[string]any{"version": "7.11.0"},
+				Provider: "",
+			},
+			{
+				URN:      stageURN,
+				Type:     tokens.Type("aws:apigatewayv2/stage:Stage"),
+				Custom:   true,
+				ID:       resource.ID("stage-only"),
+				Parent:   stackURN,
+				Provider: string(providerURN),
+			},
+		},
+	}
+	bytes, err := json.Marshal(state)
+	require.NoError(t, err)
+
+	captures := []CaptureMetadata{{
+		Type:        "aws:apigatewayv2/stage:Stage",
+		Name:        "stage",
+		ID:          "api-123/stage",
+		LogicalName: "StageLogical",
+	}}
+
+	file, err := BuildFileFromDeployment(apitype.UntypedDeployment{Deployment: bytes}, captures)
+	require.NoError(t, err)
+	require.Len(t, file.Resources, 1)
+	res := file.Resources[0]
+	assert.Equal(t, "api-123/stage", res.ID)
+	assert.Equal(t, "StageLogical", res.LogicalName)
 }

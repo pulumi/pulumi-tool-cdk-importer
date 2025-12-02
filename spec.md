@@ -10,8 +10,9 @@ rich Pulumi import files without mutating user stacks.
    flag (implied whenever `-import-file` is used).
 2. When `-import-file` is passed, run against a local file backend and emit an
    import file whose entries contain the newer metadata fields (`NameTable`,
-   `Parent`, `Provider`, `Properties`, etc.). After the run, delete the
-   temporary backend unless instructed otherwise.
+   `Parent`, `Properties`, etc.). After the run, delete the temporary backend
+   unless instructed otherwise. We now seed the import file with
+   `pulumi preview --import-file` before enrichment.
 3. Keep the existing capture collector so we can continue enriching import file
    entries with metadata that is not present in Pulumi state. Prioritize state
    data for wiring (names, parents, providers) and capture data for custom

@@ -105,7 +105,7 @@ func TestFinalizeCaptureWithPartialResults(t *testing.T) {
 	})
 
 	// Test with empty deployment (partial result)
-	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true)
+	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil)
 	require.NoError(t, err)
 
 	// Verify file was written
@@ -114,7 +114,7 @@ func TestFinalizeCaptureWithPartialResults(t *testing.T) {
 
 	// Test with complete deployment
 	importPath2 := filepath.Join(tmpDir, "import2.json")
-	err = finalizeCapture(logger, collector, importPath2, apitype.UntypedDeployment{}, false)
+	err = finalizeCapture(logger, collector, importPath2, apitype.UntypedDeployment{}, false, nil)
 	require.NoError(t, err)
 
 	// Verify file was written
@@ -133,7 +133,7 @@ func TestFinalizeCaptureLogsPartialStatus(t *testing.T) {
 	logger := log.New(&testWriter{output: &logOutput}, "[test] ", 0)
 
 	collector := NewCaptureCollector()
-	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true)
+	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil)
 	require.NoError(t, err)
 
 	// Verify partial status is logged

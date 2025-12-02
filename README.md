@@ -118,6 +118,8 @@ pulumi plugin run cdk-importer -- -stack my-stack \
 - `-skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is automatically turned on for capture mode, but you can also enable it manually when experimenting.
 - `-keep-import-state`: Keeps the temporary local backend directory so you can inspect the `Pulumi.dev.yaml`, exported stack files, or reuse them across multiple runs.
 - `-local-stack-file`: Provides an explicit backend file path to reuse instead of letting the tool create a new temp directory. Combine this with `-keep-import-state` for deterministic CI runs.
+- `-cdk-skip-custom`: When using `--cdk-app`, pass `--skip-custom` to cdk2pulumi to omit custom resources during synthesis.
+- When `-import-file` is set (with or without `--cdk-app`), the tool first runs `pulumi preview --import-file <path>` in the current working directory to generate a placeholder skeleton, then enriches it with captured/state data. The `-import-file` path is resolved relative to your invocation directory unless absolute.
 
 ### Unsupported Resources
 

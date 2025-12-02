@@ -152,6 +152,19 @@ func WriteFile(path string, file *File) error {
 	return os.WriteFile(path, bytes, 0o644)
 }
 
+// ReadFile unmarshals an import file from disk.
+func ReadFile(path string) (*File, error) {
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var file File
+	if err := json.Unmarshal(bytes, &file); err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 func resourceName(logicalID common.LogicalResourceID) string {
 	name := string(logicalID)
 	if name == "" {

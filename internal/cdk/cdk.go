@@ -9,7 +9,7 @@ import (
 
 // RunCDK2Pulumi runs the provided cdk2pulumi binary content on the given app path.
 // It returns the path to the generated Pulumi.yaml (which is the output directory).
-func RunCDK2Pulumi(binaryContent []byte, appPath string, stackNames []string) (string, error) {
+func RunCDK2Pulumi(binaryContent []byte, appPath string, stackNames []string, skipCustom bool) (string, error) {
 	// Create a temporary file for the binary
 	tmpFile, err := ioutil.TempFile("", "cdk2pulumi-*")
 	if err != nil {
@@ -38,6 +38,9 @@ func RunCDK2Pulumi(binaryContent []byte, appPath string, stackNames []string) (s
 
 	// Run the binary
 	args := []string{"--assembly", appPath}
+	if skipCustom {
+		args = append(args, "--skip-custom")
+	}
 	for _, stackName := range stackNames {
 		args = append(args, "--stacks", stackName)
 	}
