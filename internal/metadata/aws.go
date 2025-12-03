@@ -166,25 +166,11 @@ func init() {
 
 	// Manual overrides for resources that are either absent from the schema or require custom identifiers.
 	manualResources := map[string]metadata.CloudAPIResource{
-		"aws:iam/rolePolicy:RolePolicy": {
-			CfType: "AWS::IAM::Policy",
-			PrimaryIdentifier: []string{
-				"role",
-				"name",
-			},
-		},
 		"aws:iam/rolePolicyAttachment:RolePolicyAttachment": {
 			CfType: "AWS::IAM::Policy",
 			PrimaryIdentifier: []string{
 				"policyArn",
 				"role",
-			},
-		},
-		"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": {
-			CfType: "AWS::ServiceDiscovery::PrivateDnsNamespace",
-			PrimaryIdentifier: []string{
-				"id",
-				"vpc",
 			},
 		},
 	}
@@ -196,18 +182,11 @@ func init() {
 		}
 	}
 
-	manualSeparators := map[string]string{
-		"aws:iam/rolePolicy:RolePolicy":                                ":",
-		"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": ":",
-	}
 	resources := map[string]metadata.CloudAPIResource{}
 	separators := map[string]string{}
 	for tok, candidate := range candidates {
 		resources[tok] = candidate.resource
 		sep := candidate.sep
-		if override, ok := manualSeparators[tok]; ok {
-			sep = override
-		}
 		if sep != "/" {
 			separators[tok] = sep
 		}
