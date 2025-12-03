@@ -44,6 +44,10 @@ func (m *mockMetadataSource) Resource(resourceToken string) (providerMetadata.Cl
 	panic("implement me")
 }
 
+func (m *mockMetadataSource) Separator(resourceToken tokens.Type) string {
+	return "/"
+}
+
 func Test_renderResourceModel(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
 		actual, err := renderResourceModel(
@@ -76,6 +80,25 @@ func Test_renderResourceModel(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]string{
 			"ApiId": "1234",
+		}, actual)
+	})
+
+	t.Run("falls back to original casing when transformed key missing", func(t *testing.T) {
+		actual, err := renderResourceModel(
+			[]resource.PropertyKey{
+				resource.PropertyKey("policyName"),
+				resource.PropertyKey("resourceId"),
+			},
+			map[string]interface{}{
+				"policyName": "MyPolicy",
+				"resourceId": "service/app/name",
+			},
+			func(s string) string { return naming.ToCfnName(s, map[string]string{}) },
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"PolicyName": "MyPolicy",
+			"ResourceId": "service/app/name",
 		}, actual)
 	})
 }

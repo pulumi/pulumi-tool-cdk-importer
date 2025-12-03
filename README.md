@@ -14,21 +14,74 @@ pulumi plugin install tool cdk-importer
 
 ## Usage
 
-``` shell
-❯ pulumi plugin run cdk-importer -- --help
-Usage of /Users/mjeffryes/.pulumi/plugins/tool-cdk-importer-v0.0.1-alpha.3/pulumi-tool-cdk-importer:
-  -stack string
-    	CloudFormation stack name to import
+Run `pulumi plugin run cdk-importer -- --help` to see the command tree. The CLI now uses Cobra with two primary flows:
+
+- `runtime`: Import from the pulumi-cdk runtime program in the current directory (creates allowed). Use this when you already have a Pulumi program embedding your CDK app.
+- `program import`: Import into the selected stack using an existing Pulumi program located elsewhere.
+- `program iterate`: Capture mode against an existing Pulumi program using a local backend and import file for iterative refinement.
+
+Examples:
+
+```shell
+# Runtime mode in the current directory (imports into selected stack)
+pulumi plugin run cdk-importer -- runtime --stack Stack1
+
+# Runtime mode and also emit an import file based on the selected stack
+pulumi plugin run cdk-importer -- runtime --stack Stack1 --import-file ./import.json
+
+# Program mode: import into selected stack using a generated Pulumi program
+pulumi plugin run cdk-importer -- program import --program-dir ./generated --stack Stack1
+
+# Program mode, iterative capture with local backend + import file
+pulumi plugin run cdk-importer -- program iterate \
+  --program-dir ./generated \
+  --stack Stack1 \
+  --import-file ./import.json
 ```
 
-To migrate your existing CDK infrastructure to `pulumi-cdk`:
+### Runtime mode
 
-1. Follow instructions in the [pulumi/pulumi-cdk](https://github.com/pulumi/pulumi-cdk) repo to embed your CDK stacks in a Pulumi program
+- Command: `runtime`
+- Flags: `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--skip-create` (optional), `--verbose`
+- Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, runs `pulumi preview --import-file` to seed the skeleton, then imports into the selected stack and writes a bulk import file (partial on failure) without changing backends.
 
-1. Instead of running `pulumi up`, run `pulumi plugin run cdk-importer -- -stack $CFStackName`. This will import the state of the 
-  infrastructure defined by your CDK stack into Pulumi state. This operation is read-only (with the below exceptions) and should not modify any resources.
+### Program mode
 
-1. To verify that everything worked as expected, run `pulumi preview`. It should show no changes.
+- Command: `program import`
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--verbose`
+- Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, seeds via preview and writes the bulk import file after import (partial on failure).
+
+### Program iterate (capture mode)
+
+- Command: `program iterate`
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json`), `--verbose`
+- Behavior: Runs against a persistent local file backend at `.pulumi/import-state.json` (relative to your invocation dir), forces `skip-create`, seeds the import file with `pulumi preview --import-file`, and always writes the enriched import file (partial on failure). Use this for iterative capture without touching your real stack; the local backend is kept for reuse between runs.
+
+### Bulk import files
+
+`--import-file` is supported in all commands. Pass `--import-file` with no value to write `import.json`, or supply a path to choose a filename. `program iterate` also defaults to `import.json` when the flag is omitted entirely.
+- `runtime` and `program import` run preview + up against the selected stack, then write the import spec (partial on failure).
+- `program iterate` runs preview + up against the local backend and writes the import spec (partial on failure).
+
+The output includes:
+
+- `nameTable` entries for every Pulumi resource, which lets `pulumi import --file` wire parents and providers correctly.
+- Full AWS resource metadata (type, logical name, provider reference, component bit, provider version).
+- Any property subsets captured during provider interception (useful for codegen hints).
+
+The resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. Some resources with composite identifiers may show `<PLACEHOLDER>` IDs; fill those in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
+
+#### Partial import files and iterative workflows
+
+**The tool will write an import file even if errors occur during execution.** This allows you to get a starting point (a partial import file) and iteratively improve it. The command will still exit with an error code, but the import file will contain whatever resources were successfully processed.
+
+To build up your import file incrementally across multiple runs, use `program iterate`; it keeps the local backend at `.pulumi/import-state.json` for reuse.
+
+#### Capture-mode options
+
+- `--skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is enforced for `program import` and `program iterate`, and can be enabled manually in `runtime` if you want to avoid creating those helpers.
+- Local backend: `program iterate` always uses and retains a local backend rooted at `.pulumi/import-state.json`; delete that directory if you want a fresh capture.
+- When an import file is requested, the tool first runs `pulumi preview --import-file <path>` in the program directory to generate a placeholder skeleton, then enriches it with captured/state data. The `--import-file` paths are resolved relative to your invocation directory unless absolute.
 
 ### Unsupported Resources
 

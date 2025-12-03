@@ -15,37 +15,9 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"log"
-	"os"
-
-	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
-	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
-	"github.com/pulumi/pulumi-tool-cdk-importer/internal/proxy"
+	"github.com/pulumi/pulumi-tool-cdk-importer/cmd"
 )
 
 func main() {
-	logger := log.New(os.Stdout, "[cdk-importer] ", log.Ltime|log.Lshortfile)
-	ctx := context.Background()
-	var stackRef = flag.String("stack", "", "CloudFormation stack name")
-	flag.Parse()
-	if stackRef == nil || *stackRef == "" {
-		log.Fatalf("stack is required")
-	}
-	stackName := common.StackName(*stackRef)
-
-	cc, err := lookups.NewDefaultLookups(ctx)
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	logger.Printf("Getting stack resources for stack: %s", stackName)
-	if err := cc.GetStackResources(ctx, stackName); err != nil {
-		logger.Fatal(err)
-	}
-
-	if err := proxy.RunPulumiUpWithProxies(ctx, logger, cc, "."); err != nil {
-		log.Fatal(err)
-	}
+	cmd.Execute()
 }

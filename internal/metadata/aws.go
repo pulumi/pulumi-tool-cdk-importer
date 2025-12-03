@@ -15,6 +15,7 @@ func NewAwsMetadataSource() *awsClassicMetadataSource {
 
 type awsClassicMetadataSource struct {
 	cloudApiMetadata metadata.CloudAPIMetadata
+	separator        map[string]string
 }
 
 // Convert a Pulumi resource token into the matching CF ResourceType.
@@ -61,17 +62,28 @@ func (src *awsClassicMetadataSource) Resource(resourceToken string) (metadata.Cl
 	return r, nil
 }
 
+func (src *awsClassicMetadataSource) Separator(resourceToken tokens.Type) string {
+	if sep, ok := src.separator[string(resourceToken)]; ok {
+		return sep
+	}
+	return "/"
+}
+
 var awsClassicMetadata *awsClassicMetadataSource
 
 func init() {
 	awsClassicMetadata = &awsClassicMetadataSource{
+		separator: map[string]string{
+			"aws:iam/rolePolicy:RolePolicy":                                ":",
+			"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": ":",
+		},
 		cloudApiMetadata: metadata.CloudAPIMetadata{
 			Resources: map[string]metadata.CloudAPIResource{
 				"aws:apigatewayv2/stage:Stage": {
 					CfType: "AWS::ApiGatewayV2::Stage",
 					PrimaryIdentifier: []string{
 						"apiId",
-						"id",
+						"name",
 					},
 				},
 				"aws:apigatewayv2/integration:Integration": {
@@ -85,6 +97,26 @@ func init() {
 					CfType: "AWS::IAM::Policy",
 					PrimaryIdentifier: []string{
 						"arn",
+					},
+				},
+				"aws:servicediscovery/service:Service": {
+					CfType: "AWS::ServiceDiscovery::Service",
+					PrimaryIdentifier: []string{
+						"id",
+					},
+				},
+				"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": {
+					CfType: "AWS::ServiceDiscovery::PrivateDnsNamespace",
+					PrimaryIdentifier: []string{
+						"id",
+						"vpc",
+					},
+				},
+				"aws:iam/rolePolicy:RolePolicy": {
+					CfType: "AWS::IAM::Policy",
+					PrimaryIdentifier: []string{
+						"role",
+						"name",
 					},
 				},
 				"aws:iam/rolePolicyAttachment:RolePolicyAttachment": {

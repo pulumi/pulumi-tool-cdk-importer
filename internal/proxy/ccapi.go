@@ -16,6 +16,8 @@ import (
 
 type awsCCApiInterceptor struct {
 	*lookups.Lookups
+	mode      RunMode
+	collector *CaptureCollector
 }
 
 func (i *awsCCApiInterceptor) create(
@@ -35,6 +37,13 @@ func (i *awsCCApiInterceptor) create(
 	resourceToken := string(urn.Type())
 
 	if resourceToken == "aws-native:cloudformation:CustomResourceEmulator" {
+		if i.mode == CaptureImports && i.collector != nil {
+			i.collector.Skip(SkippedCapture{
+				Type:        resourceToken,
+				LogicalName: string(urn.Name()),
+				Reason:      "resource type not supported for capture",
+			})
+		}
 		return nil, errors.New("CustomResourceEmulator is not supported")
 	}
 
@@ -64,12 +73,22 @@ func (i *awsCCApiInterceptor) create(
 		return nil, err
 	}
 	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", urn.Type().String(), string(prim), string(urn))
+	if i.mode == CaptureImports && i.collector != nil {
+		properties := collectPropertyKeys(inputs)
+		i.collector.Append(Capture{
+			Type:        string(urn.Type()),
+			Name:        string(urn.Name()),
+			LogicalName: string(logical),
+			ID:          string(prim),
+			Properties:  properties,
+		})
+	}
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
 		Id:  string(prim),
 		Urn: string(urn),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Import failed: %w", err)
+		return nil, fmt.Errorf("Import failed: %w (props: %v)", err, props)
 	}
 
 	spec, err := awsNativeMetadata.Resource(resourceToken)

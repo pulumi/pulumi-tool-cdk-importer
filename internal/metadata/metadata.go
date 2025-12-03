@@ -12,4 +12,5 @@ type MetadataSource interface {
 	ResourceToken(resourceType common.ResourceType) (tokens.Type, bool)
 	PrimaryIdentifier(resourceToken tokens.Type) ([]resource.PropertyKey, bool)
 	Resource(resourceToken string) (providerMetadata.CloudAPIResource, error)
+	Separator(resourceToken tokens.Type) string
 }

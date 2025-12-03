@@ -31,9 +31,21 @@ func NewCCApiMetadataSource() *awsNativeMetadataSource {
 	return awsNativeMetadata
 }
 
+// IdPropertyStrategy defines how to determine the primary resource ID from a property
+type IdPropertyStrategy string
+
+const (
+	// StrategyPhysicalID means we should use the CloudFormation Physical ID
+	StrategyPhysicalID IdPropertyStrategy = "PhysicalID"
+	// StrategyLookup means we should perform a CCAPI lookup
+	StrategyLookup IdPropertyStrategy = "Lookup"
+)
+
 // See [awsNativeMetadata] var to access this.
 type awsNativeMetadataSource struct {
-	cloudApiMetadata metadata.CloudAPIMetadata
+	cloudApiMetadata           metadata.CloudAPIMetadata
+	primaryIdentifierOverrides map[string][]string
+	idPropertyStrategies       map[string]map[string]IdPropertyStrategy
 }
 
 // Convert a Pulumi resource token into the matching CF ResourceType.
@@ -60,6 +72,17 @@ func (src *awsNativeMetadataSource) ResourceToken(resourceType common.ResourceTy
 //
 // See https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/resource-identifier.html
 func (src *awsNativeMetadataSource) PrimaryIdentifier(resourceToken tokens.Type) ([]resource.PropertyKey, bool) {
+	// Check for override first
+	if override, ok := src.primaryIdentifierOverrides[string(resourceToken)]; ok {
+		props := []resource.PropertyKey{}
+		for _, rawProp := range override {
+			prop := resource.PropertyKey(rawProp)
+			props = append(props, prop)
+		}
+		return props, true
+	}
+
+	// Fall back to JSON metadata
 	r, ok := src.cloudApiMetadata.Resources[string(resourceToken)]
 	if !ok {
 		return nil, false
@@ -96,6 +119,19 @@ func (src *awsNativeMetadataSource) CfnProperties(resourceToken string, inputs r
 
 }
 
+func (src *awsNativeMetadataSource) Separator(resourceToken tokens.Type) string {
+	return "/"
+}
+
+func (src *awsNativeMetadataSource) GetIdPropertyStrategy(resourceType common.ResourceType, propertyName string) IdPropertyStrategy {
+	if strategies, ok := src.idPropertyStrategies[string(resourceType)]; ok {
+		if strategy, ok := strategies[propertyName]; ok {
+			return strategy
+		}
+	}
+	return ""
+}
+
 //go:embed schemas/pulumi-aws-native-metadata.json
 var awsNativeMetadataBytes []byte
 
@@ -106,5 +142,16 @@ func init() {
 	if err := json.Unmarshal(awsNativeMetadataBytes, &m); err != nil {
 		panic(err)
 	}
-	awsNativeMetadata = &awsNativeMetadataSource{m}
+	awsNativeMetadata = &awsNativeMetadataSource{
+		cloudApiMetadata:           m,
+		primaryIdentifierOverrides: map[string][]string{
+			// Override incorrect primary identifier mappings from upstream metadata
+			// e.g.
+			// "aws-native:lambda:Permission": {"functionArn", "id"},
+		},
+		idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
+			// Only add entries here for resources where the default behavior doesn't work
+			// Most resources will use the default PhysicalID or ARN heuristic
+		},
+	}
 }
