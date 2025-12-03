@@ -143,10 +143,11 @@ func init() {
 		panic(err)
 	}
 	awsNativeMetadata = &awsNativeMetadataSource{
-		cloudApiMetadata: m,
+		cloudApiMetadata:           m,
 		primaryIdentifierOverrides: map[string][]string{
 			// Override incorrect primary identifier mappings from upstream metadata
-			"aws-native:lambda:Permission": {"functionArn", "id"},
+			// e.g.
+			// "aws-native:lambda:Permission": {"functionArn", "id"},
 		},
 		idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
 			// Only add entries here for resources where the default behavior doesn't work
