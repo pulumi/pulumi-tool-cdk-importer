@@ -12,6 +12,7 @@ func TestAwsNativeMetadataSourcePrimaryIdentifierOverride(t *testing.T) {
 	src := NewCCApiMetadataSource()
 
 	t.Run("returns override for Lambda Permission", func(t *testing.T) {
+		t.Skip("Removed the override for Lambda Permissions, update if we need another override")
 		props, ok := src.PrimaryIdentifier(tokens.Type("aws-native:lambda:Permission"))
 		assert.True(t, ok)
 		assert.Equal(t, []resource.PropertyKey{

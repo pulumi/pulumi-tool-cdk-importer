@@ -39,7 +39,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18.x
+          node-version: 22.x
           registry-url: https://registry.npmjs.org
       - name: Install Go
         uses: actions/setup-go@v5
@@ -47,7 +47,7 @@ jobs:
           go-version: 1.22.x
           cache-dependency-path: ./*.sum
       - name: Install Yarn
-        run: curl -o- -L https://yarnpkg.com/install.sh | bash -s -- --version 1.13.0
+        run: curl -o- -L https://yarnpkg.com/install.sh | bash -s -- --version 1.22.22
       - name: Run build
         run: make build
       - name: Install gotestsum
