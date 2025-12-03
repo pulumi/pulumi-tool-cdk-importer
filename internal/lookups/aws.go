@@ -116,18 +116,17 @@ func (a *awsLookups) findOwnAwsId(
 	primaryID resource.PropertyKey,
 ) (common.PrimaryResourceID, error) {
 	idPropertyName := strings.ToLower(string(primaryID))
-	if strings.HasSuffix(idPropertyName, "name") || strings.HasSuffix(idPropertyName, "id") {
-		if r, ok := a.cfnStackResources[logicalID]; ok {
-			// NOTE: Assuming that PrimaryResourceID matches the PhysicalID.
-			return common.PrimaryResourceID(r.PhysicalID), nil
-		}
-		return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
-	} else if strings.HasSuffix(idPropertyName, "arn") {
+
+	// If the identifier is an ARN, construct or look it up if we know how.
+	if strings.HasSuffix(idPropertyName, "arn") {
 		if r, ok := a.cfnStackResources[logicalID]; ok {
 			return a.getArnForResource(resourceType, string(r.PhysicalID))
 		}
-		return "", fmt.Errorf("Finding resource ids by Arn for resource type %q is not yet supported", resourceType)
-	} else {
-		return "", fmt.Errorf("Expected suffix of 'Id', 'Name', or 'Arn'; got %s for resource with logicalId %q", idPropertyName, logicalID)
 	}
+
+	// Default: assume the PhysicalID is the import identifier, regardless of naming.
+	if r, ok := a.cfnStackResources[logicalID]; ok {
+		return common.PrimaryResourceID(r.PhysicalID), nil
+	}
+	return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
 }

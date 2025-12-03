@@ -118,8 +118,13 @@ func init() {
 		panic(fmt.Errorf("decoding primary identifiers: %w", err))
 	}
 
-	resources := map[string]metadata.CloudAPIResource{}
-	separators := map[string]string{}
+	type resourceCandidate struct {
+		resource metadata.CloudAPIResource
+		count    int
+		sep      string
+	}
+
+	candidates := map[string]resourceCandidate{}
 
 	for cfType, rawEntry := range raw {
 		var entries []primaryIdentifierEntry
@@ -140,15 +145,20 @@ func init() {
 				continue
 			}
 
+			count := len(entry.PulumiTypes)
 			for _, pulumiType := range entry.PulumiTypes {
-				resources[pulumiType] = metadata.CloudAPIResource{
-					CfType:            cfType,
-					PrimaryIdentifier: entry.PrimaryIdentifier.Parts,
-				}
-
 				sep := deriveSeparator(entry.PrimaryIdentifier.Format, entry.PrimaryIdentifier.Parts)
-				if sep != "/" {
-					separators[pulumiType] = sep
+				// Prefer more specific mappings (fewer pulumiTypes attached to a CF type).
+				if existing, ok := candidates[pulumiType]; ok && existing.count <= count {
+					continue
+				}
+				candidates[pulumiType] = resourceCandidate{
+					resource: metadata.CloudAPIResource{
+						CfType:            cfType,
+						PrimaryIdentifier: entry.PrimaryIdentifier.Parts,
+					},
+					count: count,
+					sep:   sep,
 				}
 			}
 		}
@@ -179,15 +189,28 @@ func init() {
 		},
 	}
 	for tok, res := range manualResources {
-		resources[tok] = res
+		candidates[tok] = resourceCandidate{
+			resource: res,
+			count:    0,
+			sep:      deriveSeparator("", res.PrimaryIdentifier),
+		}
 	}
 
 	manualSeparators := map[string]string{
 		"aws:iam/rolePolicy:RolePolicy":                                ":",
 		"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": ":",
 	}
-	for tok, sep := range manualSeparators {
-		separators[tok] = sep
+	resources := map[string]metadata.CloudAPIResource{}
+	separators := map[string]string{}
+	for tok, candidate := range candidates {
+		resources[tok] = candidate.resource
+		sep := candidate.sep
+		if override, ok := manualSeparators[tok]; ok {
+			sep = override
+		}
+		if sep != "/" {
+			separators[tok] = sep
+		}
 	}
 
 	awsClassicMetadata = &awsClassicMetadataSource{

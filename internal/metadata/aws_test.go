@@ -3,6 +3,7 @@ package metadata
 import (
 	"testing"
 
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/stretchr/testify/assert"
@@ -33,4 +34,12 @@ func TestAwsClassicMetadataPrimaryIdentifierFromSchema(t *testing.T) {
 	props, ok := src.PrimaryIdentifier(tokens.Type("aws:iam/policy:Policy"))
 	assert.True(t, ok)
 	assert.Equal(t, []resource.PropertyKey{"arn"}, props)
+}
+
+func TestAwsClassicMetadataPrefersSpecificMappings(t *testing.T) {
+	src := NewAwsMetadataSource()
+
+	resourceType, ok := src.ResourceType(tokens.Type("aws:apigatewayv2/stage:Stage"))
+	assert.True(t, ok)
+	assert.Equal(t, common.ResourceType("AWS::ApiGatewayV2::Stage"), resourceType)
 }
