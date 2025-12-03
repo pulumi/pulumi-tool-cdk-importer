@@ -36,34 +36,32 @@ pulumi plugin run cdk-importer -- program import --program-dir ./generated --sta
 pulumi plugin run cdk-importer -- program iterate \
   --program-dir ./generated \
   --stack Stack1 \
-  --import-file ./import.json \
-  --local-stack-file ./capture-state \
-  --keep-import-state
+  --import-file ./import.json
 ```
 
 ### Runtime mode
 
 - Command: `runtime`
-- Flags: `--stack` (repeatable), `--import-file` (optional), `--skip-create` (optional), `--verbose`
-- Behavior: Uses the selected Pulumi stack and current working directory. If `--import-file` is provided, the tool imports into the selected stack and then exports state to produce a bulk import file (no local backend).
+- Flags: `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--skip-create` (optional), `--verbose`
+- Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, runs `pulumi preview --import-file` to seed the skeleton, then imports into the selected stack and writes a bulk import file (partial on failure) without changing backends.
 
 ### Program mode
 
 - Command: `program import`
-- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional), `--skip-create` (optional), `--verbose`
-- Behavior: Changes into `--program-dir`, runs against the selected stack. If `--import-file` is provided, the tool imports into the selected stack and exports state to produce a bulk import file.
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--verbose`
+- Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, seeds via preview and writes the bulk import file after import (partial on failure).
 
 ### Program iterate (capture mode)
 
 - Command: `program iterate`
-- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (required), `--local-stack-file` (optional), `--keep-import-state` (optional), `--verbose`
-- Behavior: Runs against a local file backend (optionally reusing `--local-stack-file`), forces `skip-create`, seeds the import file with `pulumi preview --import-file`, and writes the enriched import file. Use this for iterative capture without touching your real stack.
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json`), `--verbose`
+- Behavior: Runs against a persistent local file backend at `.pulumi/import-state.json` (relative to your invocation dir), forces `skip-create`, seeds the import file with `pulumi preview --import-file`, and always writes the enriched import file (partial on failure). Use this for iterative capture without touching your real stack; the local backend is kept for reuse between runs.
 
 ### Bulk import files
 
-`--import-file` is supported in all commands:
-- In `runtime` and `program import`, it writes an import spec after importing into the selected stack.
-- In `program iterate`, it enables capture mode and is required.
+`--import-file` is supported in all commands. Pass `--import-file` with no value to write `import.json`, or supply a path to choose a filename. `program iterate` also defaults to `import.json` when the flag is omitted entirely.
+- `runtime` and `program import` run preview + up against the selected stack, then write the import spec (partial on failure).
+- `program iterate` runs preview + up against the local backend and writes the import spec (partial on failure).
 
 The output includes:
 
@@ -77,14 +75,13 @@ The resulting `import.json` contains every CloudFormation resource Pulumi can ma
 
 **The tool will write an import file even if errors occur during execution.** This allows you to get a starting point (a partial import file) and iteratively improve it. The command will still exit with an error code, but the import file will contain whatever resources were successfully processed.
 
-To build up your import file incrementally across multiple runs, use `program iterate` with `--local-stack-file` and `--keep-import-state` so the same local backend is reused.
+To build up your import file incrementally across multiple runs, use `program iterate`; it keeps the local backend at `.pulumi/import-state.json` for reuse.
 
 #### Capture-mode options
 
-- `--skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is automatically turned on for `program iterate`, but you can also enable it manually when experimenting.
-- `--keep-import-state`: Keeps the temporary local backend directory so you can inspect the `Pulumi.dev.yaml`, exported stack files, or reuse them across multiple runs.
-- `--local-stack-file`: Provides an explicit backend file path to reuse instead of letting the tool create a new temp directory. Combine this with `--keep-import-state` for deterministic CI runs.
-- In `program iterate`, the tool first runs `pulumi preview --import-file <path>` in the program directory to generate a placeholder skeleton, then enriches it with captured/state data. The `--import-file` and backend paths are resolved relative to your invocation directory unless absolute.
+- `--skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is enforced for `program import` and `program iterate`, and can be enabled manually in `runtime` if you want to avoid creating those helpers.
+- Local backend: `program iterate` always uses and retains a local backend rooted at `.pulumi/import-state.json`; delete that directory if you want a fresh capture.
+- When an import file is requested, the tool first runs `pulumi preview --import-file <path>` in the program directory to generate a placeholder skeleton, then enriches it with captured/state data. The `--import-file` paths are resolved relative to your invocation directory unless absolute.
 
 ### Unsupported Resources
 

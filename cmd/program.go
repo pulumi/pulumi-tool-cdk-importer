@@ -23,7 +23,6 @@ func newProgramImportCommand() *cobra.Command {
 	var stacks stringSlice
 	var programDir string
 	var importFile string
-	var skipCreate bool
 
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -41,7 +40,7 @@ func newProgramImportCommand() *cobra.Command {
 				mode:             proxy.RunPulumi,
 				stacks:           stacks,
 				importFile:       resolvePath(invocationDir, importFile),
-				skipCreate:       skipCreate,
+				skipCreate:       true,
 				workDir:          workDir,
 				invocationDir:    invocationDir,
 				keepImportState:  false,
@@ -57,8 +56,8 @@ func newProgramImportCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("stack")
 	cmd.Flags().StringVar(&programDir, "program-dir", "", "Path to an existing Pulumi program generated from a CDK app")
 	_ = cmd.MarkFlagRequired("program-dir")
-	cmd.Flags().StringVar(&importFile, "import-file", "", "Path to write a Pulumi bulk import file after importing into the selected stack")
-	cmd.Flags().BoolVar(&skipCreate, "skip-create", false, "Skip creation of special resources and only capture metadata")
+	cmd.Flags().StringVar(&importFile, "import-file", "", "Path to write a Pulumi bulk import file after importing into the selected stack (default: import.json when provided without a value)")
+	cmd.Flags().Lookup("import-file").NoOptDefVal = defaultImportFileName
 
 	return cmd
 }
@@ -67,8 +66,6 @@ func newProgramIterateCommand() *cobra.Command {
 	var stacks stringSlice
 	var programDir string
 	var importFile string
-	var keepImportState bool
-	var localStackFile string
 
 	cmd := &cobra.Command{
 		Use:   "iterate",
@@ -77,23 +74,24 @@ func newProgramIterateCommand() *cobra.Command {
 			if programDir == "" {
 				return fmt.Errorf("--program-dir is required")
 			}
-			if importFile == "" {
-				return fmt.Errorf("--import-file is required when using iterate mode")
-			}
 			invocationDir, err := os.Getwd()
 			if err != nil {
 				return err
 			}
 			workDir := resolvePath(invocationDir, programDir)
+			resolvedImport := importFile
+			if resolvedImport == "" {
+				resolvedImport = defaultImportFileName
+			}
 			cfg := runConfig{
 				mode:             proxy.CaptureImports,
 				stacks:           stacks,
-				importFile:       resolvePath(invocationDir, importFile),
+				importFile:       resolvePath(invocationDir, resolvedImport),
 				skipCreate:       true,
 				workDir:          workDir,
 				invocationDir:    invocationDir,
-				keepImportState:  keepImportState,
-				localStackFile:   resolvePath(invocationDir, localStackFile),
+				keepImportState:  true,
+				localStackFile:   resolvePath(invocationDir, defaultLocalStackFile),
 				usePreviewImport: true,
 				verbose:          verbose,
 			}
@@ -105,10 +103,8 @@ func newProgramIterateCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("stack")
 	cmd.Flags().StringVar(&programDir, "program-dir", "", "Path to an existing Pulumi program generated from a CDK app")
 	_ = cmd.MarkFlagRequired("program-dir")
-	cmd.Flags().StringVar(&importFile, "import-file", "", "Path to write a Pulumi bulk import file")
-	_ = cmd.MarkFlagRequired("import-file")
-	cmd.Flags().BoolVar(&keepImportState, "keep-import-state", false, "Keep the temporary local backend after capture runs finish")
-	cmd.Flags().StringVar(&localStackFile, "local-stack-file", "", "Path to the local backend file to re-use when capturing imports")
+	cmd.Flags().StringVar(&importFile, "import-file", "", "Path to write a Pulumi bulk import file (default: import.json when omitted or provided without a value)")
+	cmd.Flags().Lookup("import-file").NoOptDefVal = defaultImportFileName
 
 	return cmd
 }

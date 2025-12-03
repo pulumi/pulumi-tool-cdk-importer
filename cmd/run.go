@@ -12,6 +12,12 @@ import (
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/proxy"
 )
 
+const (
+	defaultImportFileName = "import.json"
+	// Iteration defaults to keeping the local backend in a predictable location for reuse.
+	defaultLocalStackFile = ".pulumi/import-state.json"
+)
+
 type runConfig struct {
 	mode             proxy.RunMode
 	stacks           []string
@@ -52,12 +58,19 @@ func run(cfg runConfig) error {
 
 	mode := cfg.mode
 	importPath := cfg.importFile
+	if importPath == "" && mode == proxy.CaptureImports {
+		importPath = resolvePath(cfg.invocationDir, defaultImportFileName)
+	}
 	skipCreateMode := cfg.skipCreate
 	keepState := cfg.keepImportState
 	localStack := cfg.localStackFile
 
 	if mode == proxy.CaptureImports {
 		skipCreateMode = true
+		keepState = true
+		if localStack == "" {
+			localStack = resolvePath(cfg.invocationDir, defaultLocalStackFile)
+		}
 	}
 
 	options := proxy.RunOptions{
@@ -68,7 +81,7 @@ func run(cfg runConfig) error {
 		LocalStackFile:   localStack,
 		StackNames:       cfg.stacks,
 		Verbose:          cfg.verbose,
-		UsePreviewImport: cfg.usePreviewImport,
+		UsePreviewImport: cfg.usePreviewImport || importPath != "",
 	}
 
 	return proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options)
@@ -83,9 +96,6 @@ func validateConfig(cfg runConfig) error {
 	}
 	if cfg.workDir == "" {
 		return fmt.Errorf("program directory is required")
-	}
-	if cfg.mode == proxy.CaptureImports && cfg.importFile == "" {
-		return fmt.Errorf("--import-file is required in iterate mode")
 	}
 	if cfg.mode == proxy.RunPulumi {
 		if cfg.keepImportState {

@@ -40,7 +40,8 @@ func newRuntimeCommand() *cobra.Command {
 
 	cmd.Flags().Var(&stacks, "stack", "CloudFormation stack name (can be specified multiple times or comma-separated)")
 	_ = cmd.MarkFlagRequired("stack")
-	cmd.Flags().StringVar(&importFile, "import-file", "", "Path to write a Pulumi bulk import file after importing into the selected stack")
+	cmd.Flags().StringVar(&importFile, "import-file", "", "Path to write a Pulumi bulk import file after importing into the selected stack (default: import.json when provided without a value)")
+	cmd.Flags().Lookup("import-file").NoOptDefVal = defaultImportFileName
 	cmd.Flags().BoolVar(&skipCreate, "skip-create", false, "Skip creation of special resources and only capture metadata")
 
 	return cmd

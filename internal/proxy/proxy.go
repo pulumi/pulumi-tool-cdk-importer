@@ -143,7 +143,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		debugOptions.Debug = true
 	}
 	var skeleton *imports.File
-	if opts.Mode == CaptureImports && opts.UsePreviewImport {
+	if opts.ImportFilePath != "" && opts.UsePreviewImport {
 		skeleton, err = runPreviewForImportFile(ctx, logger, stack, opts.ImportFilePath, debugOptions)
 		if err != nil {
 			return err
@@ -157,9 +157,8 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 		optup.DebugLogging(debugOptions),
 		optup.SuppressProgress(),
 	)
-	if opts.Mode == CaptureImports {
-		// Always attempt to export state and write import file, even if Up() failed.
-		// This allows users to get a partial import file as a starting point.
+
+	if opts.ImportFilePath != "" {
 		state, exportErr := stack.Export(ctx)
 		if exportErr != nil {
 			logger.Printf("Warning: failed to export stack state: %v", exportErr)
@@ -185,15 +184,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 			return upErr
 		}
 	}
-	if upErr == nil && opts.Mode == RunPulumi && opts.ImportFilePath != "" {
-		state, exportErr := stack.Export(ctx)
-		if exportErr != nil {
-			return fmt.Errorf("exporting stack state for import file: %w", exportErr)
-		}
-		if err := finalizeCapture(logger, collector, opts.ImportFilePath, state, false, nil); err != nil {
-			return err
-		}
-	}
+
 	if upErr != nil {
 		return upErr
 	}
