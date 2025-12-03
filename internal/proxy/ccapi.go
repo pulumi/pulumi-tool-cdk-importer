@@ -88,7 +88,7 @@ func (i *awsCCApiInterceptor) create(
 		Urn: string(urn),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Import failed: %v -  %w", props, err)
+		return nil, fmt.Errorf("Import failed: %w (props: %v)", err, props)
 	}
 
 	spec, err := awsNativeMetadata.Resource(resourceToken)

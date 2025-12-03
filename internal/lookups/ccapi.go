@@ -112,7 +112,8 @@ func (c *ccapiLookups) FindPrimaryResourceID(
 	case 1:
 		return c.findOwnNativeId(ctx, resourceType, logicalID, idParts[0])
 	default:
-		fmt.Printf("Rendering Resource Models for %s - %s: Parts: %v: Props: %v", resourceType, logicalID, idParts, props)
+		// TODO: debug logging
+		// fmt.Printf("Rendering Resource Models for %s - %s: Parts: %v: Props: %v", resourceType, logicalID, idParts, props)
 		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
 			return naming.ToCfnName(string(s), nil)
 		})
