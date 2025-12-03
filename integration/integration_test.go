@@ -68,7 +68,7 @@ func runImportCommand(t *testing.T, workspace auto.Workspace, stackName string) 
 		t.Fatal(err)
 	}
 	commandPath := filepath.Join(binPath, "pulumi-tool-cdk-importer")
-	args := []string{"runtime", "-stack", stackName}
+	args := []string{"runtime", "--stack", stackName}
 	return runCmd(t, workspace, commandPath, args)
 }
 
