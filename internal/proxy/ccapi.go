@@ -25,7 +25,7 @@ func (i *awsCCApiInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
-	c, err := lookups.NewCCApiLookups(ctx, i.CCAPIClient, i.CfnStackResources)
+	c, err := lookups.NewCCApiLookups(ctx, i.CCAPIClient, i.CfnStackResources, i.Region, i.Account)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API Client for CCAPI: %w", err)
 	}

@@ -105,6 +105,66 @@ func TestFindPrimaryResourceID(t *testing.T) {
 		assert.Equal(t, stackResource, ccapiLookups.cfnStackResources)
 	})
 
+	t.Run("events rule custom resolver default bus", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Rule": {
+					ResourceType: "AWS::Events::Rule",
+					PhysicalID:   "default|my-rule",
+					LogicalID:    "Rule",
+				},
+			},
+			ccapiClient:        &mockCCAPIClient{},
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+			region:             "us-west-2",
+			account:            "123456789012",
+			partition:          "aws",
+		}
+		ccapiLookups.customResolvers = map[common.ResourceType]customResolver{
+			"AWS::Events::Rule": ccapiLookups.resolveEventsRule,
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::Events::Rule"),
+			common.LogicalResourceID("Rule"),
+			resource.PropertyKey("Arn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/my-rule"), actual)
+	})
+
+	t.Run("events rule custom resolver custom bus", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Rule": {
+					ResourceType: "AWS::Events::Rule",
+					PhysicalID:   "orders|match-order",
+					LogicalID:    "Rule",
+				},
+			},
+			ccapiClient:        &mockCCAPIClient{},
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+			region:             "us-west-2",
+			account:            "123456789012",
+			partition:          "aws",
+		}
+		ccapiLookups.customResolvers = map[common.ResourceType]customResolver{
+			"AWS::Events::Rule": ccapiLookups.resolveEventsRule,
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::Events::Rule"),
+			common.LogicalResourceID("Rule"),
+			resource.PropertyKey("Arn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/orders/match-order"), actual)
+	})
+
 	t.Run("arn suffix uses physical id when already arn", func(t *testing.T) {
 		ctx := context.Background()
 		ccapiClient := &mockCCAPIClient{

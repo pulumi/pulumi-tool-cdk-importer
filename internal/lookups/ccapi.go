@@ -73,14 +73,27 @@ type ccapiLookups struct {
 	ccapiClient        CCAPIClient
 	cfnStackResources  map[common.LogicalResourceID]CfnStackResource
 	ccapiResourceCache map[resourceCacheKey][]types.ResourceDescription
+	customResolvers    map[common.ResourceType]customResolver
+	region             string
+	account            string
+	partition          string
 }
 
-func NewCCApiLookups(ctx context.Context, client *cloudcontrol.Client, cfnStackResources map[common.LogicalResourceID]CfnStackResource) (*ccapiLookups, error) {
-	return &ccapiLookups{
+type customResolver func(ctx context.Context, logicalID common.LogicalResourceID, primaryProp resource.PropertyKey) (common.PrimaryResourceID, error)
+
+func NewCCApiLookups(ctx context.Context, client *cloudcontrol.Client, cfnStackResources map[common.LogicalResourceID]CfnStackResource, region, account string) (*ccapiLookups, error) {
+	c := &ccapiLookups{
 		ccapiClient:        &ccapiClient{client: client},
 		cfnStackResources:  cfnStackResources,
 		ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
-	}, nil
+		region:             region,
+		account:            account,
+		partition:          partitionForRegion(region),
+	}
+	c.customResolvers = map[common.ResourceType]customResolver{
+		common.ResourceType("AWS::Events::Rule"): c.resolveEventsRule,
+	}
+	return c, nil
 }
 
 func (c *ccapiLookups) FindLogicalResourceID(
@@ -170,6 +183,11 @@ func (c *ccapiLookups) findOwnNativeId(
 			}
 			return id, nil
 		}
+	} else if strategy == metadata.StrategyCustom {
+		if resolver, ok := c.customResolvers[resourceType]; ok {
+			return resolver(ctx, logicalID, primaryID)
+		}
+		return "", fmt.Errorf("No custom resolver defined for %s", resourceType)
 	}
 
 	// 2. ARN heuristic: properties ending in 'arn' typically need lookup
@@ -193,6 +211,53 @@ func (c *ccapiLookups) findOwnNativeId(
 		return common.PrimaryResourceID(r.PhysicalID), nil
 	}
 	return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
+}
+
+func (c *ccapiLookups) resolveEventsRule(
+	_ context.Context,
+	logicalID common.LogicalResourceID,
+	_ resource.PropertyKey,
+) (common.PrimaryResourceID, error) {
+	r, ok := c.cfnStackResources[logicalID]
+	if !ok {
+		return "", fmt.Errorf("Resource %s not found in stack", logicalID)
+	}
+
+	parts := strings.SplitN(string(r.PhysicalID), "|", 2)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("unexpected physical id for Events Rule %q", r.PhysicalID)
+	}
+	busName, ruleName := parts[0], parts[1]
+	if ruleName == "" {
+		return "", fmt.Errorf("rule name missing in physical id for %s", logicalID)
+	}
+
+	partition := c.partition
+	if partition == "" {
+		partition = partitionForRegion(c.region)
+	}
+	if c.account == "" || c.region == "" || partition == "" {
+		return "", fmt.Errorf("missing account (%q) or region (%q) for Events Rule ARN construction", c.account, c.region)
+	}
+
+	arnPath := fmt.Sprintf("rule/%s", ruleName)
+	if busName != "" && busName != "default" {
+		arnPath = fmt.Sprintf("rule/%s/%s", busName, ruleName)
+	}
+
+	arn := fmt.Sprintf("arn:%s:events:%s:%s:%s", partition, c.region, c.account, arnPath)
+	return common.PrimaryResourceID(arn), nil
+}
+
+func partitionForRegion(region string) string {
+	switch {
+	case strings.HasPrefix(region, "cn-"):
+		return "aws-cn"
+	case strings.HasPrefix(region, "us-gov-"):
+		return "aws-us-gov"
+	default:
+		return "aws"
+	}
 }
 
 // findResourceIdentifier attempts to determine an import id for a resource when
