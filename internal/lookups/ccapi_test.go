@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/stretchr/testify/assert"
 )
@@ -102,6 +103,75 @@ func TestFindPrimaryResourceID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("bucket-name"), actual)
 		assert.Equal(t, stackResource, ccapiLookups.cfnStackResources)
+	})
+
+	t.Run("arn suffix uses physical id when already arn", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				t.Fatalf("expected to skip CCAPI lookup for %s", typeName)
+				return nil
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Topic": {
+					ResourceType: "AWS::SNS::Topic",
+					PhysicalID:   "arn:aws:sns:us-west-2:123456789012:my-topic",
+					LogicalID:    "Topic",
+				},
+			},
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::SNS::Topic"),
+			common.LogicalResourceID("Topic"),
+			resource.PropertyKey("TopicArn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:sns:us-west-2:123456789012:my-topic"), actual)
+	})
+
+	t.Run("arn suffix falls back to lookup when physical id not arn", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				assert.Equal(t, "AWS::SNS::Topic", typeName)
+				return &mockListResourcesPager{
+					typeName: typeName,
+					resourceDescriptions: []types.ResourceDescription{
+						{
+							Identifier: aws.String("arn:aws:sns:us-west-2:123456789012:my-topic"),
+						},
+					},
+				}
+			},
+		}
+
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Topic": {
+					ResourceType: "AWS::SNS::Topic",
+					PhysicalID:   "my-topic",
+					LogicalID:    "Topic",
+				},
+			},
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::SNS::Topic"),
+			common.LogicalResourceID("Topic"),
+			resource.PropertyKey("TopicArn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:sns:us-west-2:123456789012:my-topic"), actual)
 	})
 
 	t.Run("composite id and multiple resources", func(t *testing.T) {

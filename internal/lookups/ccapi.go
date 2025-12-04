@@ -175,6 +175,10 @@ func (c *ccapiLookups) findOwnNativeId(
 	// 2. ARN heuristic: properties ending in 'arn' typically need lookup
 	if strings.HasSuffix(idPropertyName, "arn") {
 		if r, ok := c.cfnStackResources[logicalID]; ok {
+			// Many resources already expose an ARN-shaped PhysicalID; accept it directly.
+			if strings.HasPrefix(string(r.PhysicalID), "arn:") {
+				return common.PrimaryResourceID(r.PhysicalID), nil
+			}
 			suffix := string(r.PhysicalID)
 			id, err := c.findResourceIdentifier(ctx, resourceType, logicalID, suffix, nil)
 			if err != nil {
