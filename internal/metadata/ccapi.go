@@ -46,6 +46,7 @@ type awsNativeMetadataSource struct {
 	cloudApiMetadata           metadata.CloudAPIMetadata
 	primaryIdentifierOverrides map[string][]string
 	idPropertyStrategies       map[string]map[string]IdPropertyStrategy
+	listHandlerSchemas         map[common.ResourceType][]string
 }
 
 // Convert a Pulumi resource token into the matching CF ResourceType.
@@ -132,15 +133,53 @@ func (src *awsNativeMetadataSource) GetIdPropertyStrategy(resourceType common.Re
 	return ""
 }
 
+func (src *awsNativeMetadataSource) ListHandlerRequiredProperties(resourceType common.ResourceType) []string {
+	if props, ok := src.listHandlerSchemas[resourceType]; ok {
+		return props
+	}
+	return nil
+}
+
 //go:embed schemas/pulumi-aws-native-metadata.json
 var awsNativeMetadataBytes []byte
 
 var awsNativeMetadata *awsNativeMetadataSource
 
+type listHandlerSchema struct {
+	Required []string `json:"required,omitempty"`
+}
+
+type extendedCloudAPIResource struct {
+	metadata.CloudAPIResource
+	ListHandlerSchema *listHandlerSchema `json:"listHandlerSchema,omitempty"`
+}
+
+type extendedCloudAPIMetadata struct {
+	Resources map[string]extendedCloudAPIResource  `json:"resources"`
+	Types     map[string]metadata.CloudAPIType     `json:"types"`
+	Functions map[string]metadata.CloudAPIFunction `json:"functions"`
+}
+
 func init() {
 	var m metadata.CloudAPIMetadata
 	if err := json.Unmarshal(awsNativeMetadataBytes, &m); err != nil {
 		panic(err)
+	}
+
+	var extended extendedCloudAPIMetadata
+	if err := json.Unmarshal(awsNativeMetadataBytes, &extended); err != nil {
+		panic(err)
+	}
+
+	listHandlerSchemas := map[common.ResourceType][]string{}
+	for _, res := range extended.Resources {
+		if res.ListHandlerSchema == nil {
+			continue
+		}
+		if len(res.ListHandlerSchema.Required) == 0 {
+			continue
+		}
+		listHandlerSchemas[common.ResourceType(res.CfType)] = res.ListHandlerSchema.Required
 	}
 	awsNativeMetadata = &awsNativeMetadataSource{
 		cloudApiMetadata:           m,
@@ -153,5 +192,6 @@ func init() {
 			// Only add entries here for resources where the default behavior doesn't work
 			// Most resources will use the default PhysicalID or ARN heuristic
 		},
+		listHandlerSchemas: listHandlerSchemas,
 	}
 }

@@ -108,4 +108,30 @@ func TestFindAwsPrimaryResourceID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("ns-gwftkj6fpvjfzc7n:vpc-02c046362e72bd9be"), actual)
 	})
+
+	t.Run("queue policy uses provided queueUrl", func(t *testing.T) {
+		ctx := context.Background()
+		resourceToken := tokens.Type("aws:sqs/queuePolicy:QueuePolicy")
+		logicalID := common.LogicalResourceID("QueuePolicy")
+		queueURL := "https://sqs.us-west-2.amazonaws.com/123456789012/my-queue"
+		props := map[string]interface{}{
+			"queueUrl": queueURL,
+		}
+
+		awsLookups := &awsLookups{
+			region:  "us-west-2",
+			account: "123456789012",
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"QueuePolicy": {
+					ResourceType: "AWS::SQS::QueuePolicy",
+					PhysicalID:   "policy-physical-id",
+					LogicalID:    "QueuePolicy",
+				},
+			},
+		}
+
+		actual, err := awsLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID(queueURL), actual)
+	})
 }

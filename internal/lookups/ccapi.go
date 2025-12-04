@@ -175,6 +175,10 @@ func (c *ccapiLookups) findOwnNativeId(
 	// 2. ARN heuristic: properties ending in 'arn' typically need lookup
 	if strings.HasSuffix(idPropertyName, "arn") {
 		if r, ok := c.cfnStackResources[logicalID]; ok {
+			// Many resources already expose an ARN-shaped PhysicalID; accept it directly.
+			if strings.HasPrefix(string(r.PhysicalID), "arn:") {
+				return common.PrimaryResourceID(r.PhysicalID), nil
+			}
 			suffix := string(r.PhysicalID)
 			id, err := c.findResourceIdentifier(ctx, resourceType, logicalID, suffix, nil)
 			if err != nil {
@@ -204,6 +208,11 @@ func (c *ccapiLookups) findResourceIdentifier(
 	suffix string,
 	resourceModel map[string]string,
 ) (common.PrimaryResourceID, error) {
+	var err error
+	resourceModel, err = c.applyListHandlerResourceModel(resourceType, logicalID, resourceModel)
+	if err != nil {
+		return "", fmt.Errorf("could not build list handler resource model for %s: %w", logicalID, err)
+	}
 	resources, err := c.listResources(ctx, resourceType, resourceModel)
 	if err != nil {
 		fmt.Printf("Error listing resource: %s, %v, %v\n", resourceType, resourceModel, err)
@@ -273,6 +282,51 @@ func (c *ccapiLookups) findResourceIdentifier(
 	}
 
 	return "", fmt.Errorf("could not find resource identifier for type: %s: %v", resourceType, resourceModel)
+}
+
+func (c *ccapiLookups) applyListHandlerResourceModel(
+	resourceType common.ResourceType,
+	logicalID common.LogicalResourceID,
+	resourceModel map[string]string,
+) (map[string]string, error) {
+	md := metadata.NewCCApiMetadataSource()
+	required := md.ListHandlerRequiredProperties(resourceType)
+	if len(required) == 0 {
+		return resourceModel, nil
+	}
+
+	mergedModel := make(map[string]string, len(resourceModel)+len(required))
+	for k, v := range resourceModel {
+		mergedModel[k] = v
+	}
+
+	missing := []resource.PropertyKey{}
+	for _, prop := range required {
+		if _, ok := mergedModel[prop]; ok {
+			continue
+		}
+		missing = append(missing, resource.PropertyKey(prop))
+	}
+
+	if len(missing) == 0 {
+		return mergedModel, nil
+	}
+
+	stackResource, ok := c.cfnStackResources[logicalID]
+	if !ok {
+		return mergedModel, nil
+	}
+
+	derived, err := renderResourceModel(missing, stackResource.Props, func(s string) string { return s })
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range derived {
+		mergedModel[k] = v
+	}
+
+	return mergedModel, nil
 }
 
 // listResources lists resources of a given type from the CCAPI

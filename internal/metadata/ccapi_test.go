@@ -6,6 +6,8 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 )
 
 func TestAwsNativeMetadataSourcePrimaryIdentifierOverride(t *testing.T) {
@@ -34,4 +36,12 @@ func TestAwsNativeMetadataSourcePrimaryIdentifierOverride(t *testing.T) {
 		_, ok := src.PrimaryIdentifier(tokens.Type("aws-native:unknown:Resource"))
 		assert.False(t, ok)
 	})
+}
+
+func TestAwsNativeMetadataSourceListHandlerSchema(t *testing.T) {
+	src := NewCCApiMetadataSource()
+
+	required := src.ListHandlerRequiredProperties(common.ResourceType("AWS::Amplify::Branch"))
+	assert.NotNil(t, required)
+	assert.Contains(t, required, "AppId")
 }

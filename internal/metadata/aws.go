@@ -1,7 +1,10 @@
 package metadata
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/pulumi/pulumi-aws-native/provider/pkg/metadata"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
@@ -16,6 +19,18 @@ func NewAwsMetadataSource() *awsClassicMetadataSource {
 type awsClassicMetadataSource struct {
 	cloudApiMetadata metadata.CloudAPIMetadata
 	separator        map[string]string
+}
+
+type primaryIdentifierSet struct {
+	Format string   `json:"format"`
+	Parts  []string `json:"parts"`
+}
+
+type primaryIdentifierEntry struct {
+	Note              string               `json:"note,omitempty"`
+	Provider          string               `json:"provider"`
+	PrimaryIdentifier primaryIdentifierSet `json:"primaryIdentifier"`
+	PulumiTypes       []string             `json:"pulumiTypes"`
 }
 
 // Convert a Pulumi resource token into the matching CF ResourceType.
@@ -69,64 +84,118 @@ func (src *awsClassicMetadataSource) Separator(resourceToken tokens.Type) string
 	return "/"
 }
 
+// deriveSeparator attempts to infer the separator between identifier parts from the provided format string.
+func deriveSeparator(format string, parts []string) string {
+	if len(parts) < 2 || format == "" {
+		return "/"
+	}
+
+	remaining := format
+	if idx := strings.Index(remaining, parts[0]); idx >= 0 {
+		remaining = remaining[idx+len(parts[0]):]
+	}
+
+	nextIdx := strings.Index(remaining, parts[1])
+	if nextIdx < 0 {
+		return "/"
+	}
+
+	sep := remaining[:nextIdx]
+	if sep == "" {
+		return "/"
+	}
+	return sep
+}
+
 var awsClassicMetadata *awsClassicMetadataSource
 
+//go:embed schemas/primary-identifiers.json
+var primaryIdentifiersBytes []byte
+
 func init() {
-	awsClassicMetadata = &awsClassicMetadataSource{
-		separator: map[string]string{
-			"aws:iam/rolePolicy:RolePolicy":                                ":",
-			"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": ":",
-		},
-		cloudApiMetadata: metadata.CloudAPIMetadata{
-			Resources: map[string]metadata.CloudAPIResource{
-				"aws:apigatewayv2/stage:Stage": {
-					CfType: "AWS::ApiGatewayV2::Stage",
-					PrimaryIdentifier: []string{
-						"apiId",
-						"name",
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(primaryIdentifiersBytes, &raw); err != nil {
+		panic(fmt.Errorf("decoding primary identifiers: %w", err))
+	}
+
+	type resourceCandidate struct {
+		resource metadata.CloudAPIResource
+		count    int
+		sep      string
+	}
+
+	candidates := map[string]resourceCandidate{}
+
+	for cfType, rawEntry := range raw {
+		var entries []primaryIdentifierEntry
+		if len(rawEntry) > 0 && rawEntry[0] == '[' {
+			if err := json.Unmarshal(rawEntry, &entries); err != nil {
+				panic(fmt.Errorf("decoding primary identifier array for %s: %w", cfType, err))
+			}
+		} else {
+			var entry primaryIdentifierEntry
+			if err := json.Unmarshal(rawEntry, &entry); err != nil {
+				panic(fmt.Errorf("decoding primary identifier for %s: %w", cfType, err))
+			}
+			entries = append(entries, entry)
+		}
+
+		for _, entry := range entries {
+			if entry.Provider != "aws" {
+				continue
+			}
+
+			count := len(entry.PulumiTypes)
+			for _, pulumiType := range entry.PulumiTypes {
+				sep := deriveSeparator(entry.PrimaryIdentifier.Format, entry.PrimaryIdentifier.Parts)
+				// Prefer more specific mappings (fewer pulumiTypes attached to a CF type).
+				if existing, ok := candidates[pulumiType]; ok && existing.count <= count {
+					continue
+				}
+				candidates[pulumiType] = resourceCandidate{
+					resource: metadata.CloudAPIResource{
+						CfType:            cfType,
+						PrimaryIdentifier: entry.PrimaryIdentifier.Parts,
 					},
-				},
-				"aws:apigatewayv2/integration:Integration": {
-					CfType: "AWS::ApiGatewayV2::Integration",
-					PrimaryIdentifier: []string{
-						"apiId",
-						"id",
-					},
-				},
-				"aws:iam/policy:Policy": {
-					CfType: "AWS::IAM::Policy",
-					PrimaryIdentifier: []string{
-						"arn",
-					},
-				},
-				"aws:servicediscovery/service:Service": {
-					CfType: "AWS::ServiceDiscovery::Service",
-					PrimaryIdentifier: []string{
-						"id",
-					},
-				},
-				"aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace": {
-					CfType: "AWS::ServiceDiscovery::PrivateDnsNamespace",
-					PrimaryIdentifier: []string{
-						"id",
-						"vpc",
-					},
-				},
-				"aws:iam/rolePolicy:RolePolicy": {
-					CfType: "AWS::IAM::Policy",
-					PrimaryIdentifier: []string{
-						"role",
-						"name",
-					},
-				},
-				"aws:iam/rolePolicyAttachment:RolePolicyAttachment": {
-					CfType: "AWS::IAM::Policy",
-					PrimaryIdentifier: []string{
-						"policyArn",
-						"role",
-					},
-				},
+					count: count,
+					sep:   sep,
+				}
+			}
+		}
+	}
+
+	// Manual overrides for resources that are either absent from the schema or require custom identifiers.
+	manualResources := map[string]metadata.CloudAPIResource{
+		"aws:iam/rolePolicyAttachment:RolePolicyAttachment": {
+			CfType: "AWS::IAM::Policy",
+			PrimaryIdentifier: []string{
+				"policyArn",
+				"role",
 			},
+		},
+	}
+	for tok, res := range manualResources {
+		candidates[tok] = resourceCandidate{
+			resource: res,
+			count:    0,
+			sep:      deriveSeparator("", res.PrimaryIdentifier),
+		}
+	}
+
+	resources := map[string]metadata.CloudAPIResource{}
+	separators := map[string]string{}
+	for tok, candidate := range candidates {
+		resources[tok] = candidate.resource
+		sep := candidate.sep
+		if sep != "/" {
+			separators[tok] = sep
+		}
+	}
+
+	awsClassicMetadata = &awsClassicMetadataSource{
+		separator: separators,
+		cloudApiMetadata: metadata.CloudAPIMetadata{
+			Resources: resources,
 		},
 	}
 
