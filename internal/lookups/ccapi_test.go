@@ -152,6 +152,12 @@ func TestFindPrimaryResourceID(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/my-rule"), actual)
+		mockEv, ok := ccapiLookups.eventsClient.(*mockEventsClient)
+		assert.True(t, ok)
+		if assert.NotNil(t, mockEv.input) {
+			assert.Equal(t, "my-rule", aws.ToString(mockEv.input.Name))
+			assert.Equal(t, "default", aws.ToString(mockEv.input.EventBusName))
+		}
 	})
 
 	t.Run("events rule custom resolver custom bus", func(t *testing.T) {
@@ -184,6 +190,12 @@ func TestFindPrimaryResourceID(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/orders/match-order"), actual)
+		mockEv, ok := ccapiLookups.eventsClient.(*mockEventsClient)
+		assert.True(t, ok)
+		if assert.NotNil(t, mockEv.input) {
+			assert.Equal(t, "match-order", aws.ToString(mockEv.input.Name))
+			assert.Equal(t, "orders", aws.ToString(mockEv.input.EventBusName))
+		}
 	})
 
 	t.Run("events rule without composite physical id falls back to lookup", func(t *testing.T) {
