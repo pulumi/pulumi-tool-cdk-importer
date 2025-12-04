@@ -147,7 +147,7 @@ Use `StrategyCustom` to plug in a resolver that derives the identifier without C
 - Physical ID: `{eventBusName}|{ruleName}`
 - Primary identifier: ARN
 - CCAPI list only works on the default bus, so we can't rely on it for non-default buses.
-- Resolver parses the physical ID and constructs the ARN:
+- Resolver parses the physical ID, calls `DescribeRule`, and returns the ARN (only when the physical ID is composite):
 
 ```go
 // metadata override
@@ -155,11 +155,11 @@ Use `StrategyCustom` to plug in a resolver that derives the identifier without C
 
 // resolver (ccapiLookups)
 bus, rule := splitPhysicalID("bus|rule")
-arnPath := fmt.Sprintf("rule/%s", rule)
-if bus != "" && bus != "default" {
-    arnPath = fmt.Sprintf("rule/%s/%s", bus, rule)
-}
-arn := fmt.Sprintf("arn:%s:events:%s:%s:%s", partition, region, account, arnPath)
+desc, err := eventsClient.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
+    Name:         aws.String(rule),
+    EventBusName: aws.String(bus), // empty means default bus
+})
+return desc.Arn, err
 ```
 
 Add new resolvers by registering them in `customResolvers` on `ccapiLookups`.
@@ -176,7 +176,7 @@ Add new resolvers by registering them in `customResolvers` on `ccapiLookups`.
   - `findOwnNativeId()`: Single-property identifier resolution
   - `findCCApiCompositeId()`: Composite identifier resolution
   - `findResourceIdentifier()`: CCAPI lookup with retry logic
-  - `customResolvers`: Map of resource-type-specific resolvers (e.g., Events Rule ARN construction)
+  - `customResolvers`: Map of resource-type-specific resolvers (e.g., Events Rule ARN lookup via DescribeRule)
 - `internal/lookups/aws.go`: Classic AWS provider lookup (for comparison)
 
 ### Tests

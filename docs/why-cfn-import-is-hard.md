@@ -47,7 +47,7 @@ An alternative approach is to ignore the input properties and just list **all** 
     *   *Example*: `AWS::Events::Rule` Physical ID is `{eventBusName}|{ruleName}` but the primary ID is the ARN. CCAPI `ListResources` only returns rules on the **default** event bus, so non-default buses can never be discovered by listing.
     *   Without a custom resolver, we cannot import rules on other buses even if we know the Physical ID.
 
-**Practical workaround:** we added a `StrategyCustom` path and an Events Rule resolver that parses the physical ID and constructs the ARN using partition/region/account, bypassing CCAPI. These bespoke resolvers keep the importer working when listing is impossible.
+**Practical workaround:** we added a `StrategyCustom` path and an Events Rule resolver that, when the physical ID is composite, calls `DescribeRule` to fetch the ARN directly (bypassing CCAPI list). These bespoke resolvers keep the importer working when listing is impossible.
 
 ## Summary
 
