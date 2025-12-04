@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
@@ -54,6 +55,22 @@ func (m *mockListResourcesPager) NextPage(ctx context.Context, optFns ...func(*c
 
 type mockCCAPIClient struct {
 	mockGetPager func(typeName string, resourceModel *string) ListResourcesPager
+}
+
+type mockEventsClient struct {
+	arn   string
+	err   error
+	input *eventbridge.DescribeRuleInput
+}
+
+func (m *mockEventsClient) DescribeRule(ctx context.Context, params *eventbridge.DescribeRuleInput, optFns ...func(*eventbridge.Options)) (*eventbridge.DescribeRuleOutput, error) {
+	m.input = params
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &eventbridge.DescribeRuleOutput{
+		Arn: aws.String(m.arn),
+	}, nil
 }
 
 type fixedBackoff time.Duration
@@ -103,6 +120,122 @@ func TestFindPrimaryResourceID(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID("bucket-name"), actual)
 		assert.Equal(t, stackResource, ccapiLookups.cfnStackResources)
+	})
+
+	t.Run("events rule custom resolver default bus", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Rule": {
+					ResourceType: "AWS::Events::Rule",
+					PhysicalID:   "default|my-rule",
+					LogicalID:    "Rule",
+				},
+			},
+			ccapiClient:        &mockCCAPIClient{},
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+			region:             "us-west-2",
+			account:            "123456789012",
+			eventsClient: &mockEventsClient{
+				arn: "arn:aws:events:us-west-2:123456789012:rule/my-rule",
+			},
+		}
+		ccapiLookups.customResolvers = map[common.ResourceType]customResolver{
+			"AWS::Events::Rule": ccapiLookups.resolveEventsRule,
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::Events::Rule"),
+			common.LogicalResourceID("Rule"),
+			resource.PropertyKey("Arn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/my-rule"), actual)
+		mockEv, ok := ccapiLookups.eventsClient.(*mockEventsClient)
+		assert.True(t, ok)
+		if assert.NotNil(t, mockEv.input) {
+			assert.Equal(t, "my-rule", aws.ToString(mockEv.input.Name))
+			assert.Equal(t, "default", aws.ToString(mockEv.input.EventBusName))
+		}
+	})
+
+	t.Run("events rule custom resolver custom bus", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Rule": {
+					ResourceType: "AWS::Events::Rule",
+					PhysicalID:   "orders|match-order",
+					LogicalID:    "Rule",
+				},
+			},
+			ccapiClient:        &mockCCAPIClient{},
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+			region:             "us-west-2",
+			account:            "123456789012",
+			eventsClient: &mockEventsClient{
+				arn: "arn:aws:events:us-west-2:123456789012:rule/orders/match-order",
+			},
+		}
+		ccapiLookups.customResolvers = map[common.ResourceType]customResolver{
+			"AWS::Events::Rule": ccapiLookups.resolveEventsRule,
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::Events::Rule"),
+			common.LogicalResourceID("Rule"),
+			resource.PropertyKey("Arn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/orders/match-order"), actual)
+		mockEv, ok := ccapiLookups.eventsClient.(*mockEventsClient)
+		assert.True(t, ok)
+		if assert.NotNil(t, mockEv.input) {
+			assert.Equal(t, "match-order", aws.ToString(mockEv.input.Name))
+			assert.Equal(t, "orders", aws.ToString(mockEv.input.EventBusName))
+		}
+	})
+
+	t.Run("events rule without composite physical id falls back to lookup", func(t *testing.T) {
+		ctx := context.Background()
+		ccapiClient := &mockCCAPIClient{
+			mockGetPager: func(typeName string, resourceModel *string) ListResourcesPager {
+				assert.Equal(t, "AWS::Events::Rule", typeName)
+				return &mockListResourcesPager{
+					typeName: "AWS::Events::Rule",
+					resourceDescriptions: []types.ResourceDescription{
+						{
+							Identifier: aws.String("arn:aws:events:us-west-2:123456789012:rule/my-rule"),
+						},
+					},
+				}
+			},
+		}
+		ccapiLookups := &ccapiLookups{
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				"Rule": {
+					ResourceType: "AWS::Events::Rule",
+					PhysicalID:   "my-rule",
+					LogicalID:    "Rule",
+				},
+			},
+			ccapiClient:        ccapiClient,
+			ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
+		}
+		ccapiLookups.customResolvers = map[common.ResourceType]customResolver{
+			"AWS::Events::Rule": ccapiLookups.resolveEventsRule,
+		}
+
+		actual, err := ccapiLookups.findOwnNativeId(
+			ctx,
+			common.ResourceType("AWS::Events::Rule"),
+			common.LogicalResourceID("Rule"),
+			resource.PropertyKey("Arn"),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("arn:aws:events:us-west-2:123456789012:rule/my-rule"), actual)
 	})
 
 	t.Run("arn suffix uses physical id when already arn", func(t *testing.T) {

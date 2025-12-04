@@ -43,6 +43,11 @@ An alternative approach is to ignore the input properties and just list **all** 
 2.  **Mandatory Filters**: Some AWS APIs *require* a filter.
     *   *Example*: `AWS::ElasticLoadBalancingV2::Listener` throws an error if you try to list it without providing a `LoadBalancerArn`.
     *   Since we can't resolve the `LoadBalancerArn` from the template (see Challenge 2), we cannot look up this resource at all.
+3.  **Service-Specific Gaps**: Some list operations are scoped or incomplete.
+    *   *Example*: `AWS::Events::Rule` Physical ID is `{eventBusName}|{ruleName}` but the primary ID is the ARN. CCAPI `ListResources` only returns rules on the **default** event bus, so non-default buses can never be discovered by listing.
+    *   Without a custom resolver, we cannot import rules on other buses even if we know the Physical ID.
+
+**Practical workaround:** we added a `StrategyCustom` path and an Events Rule resolver that, when the physical ID is composite, calls `DescribeRule` to fetch the ARN directly (bypassing CCAPI list). These bespoke resolvers keep the importer working when listing is impossible.
 
 ## Summary
 

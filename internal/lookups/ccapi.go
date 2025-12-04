@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/smithy-go"
 	"github.com/pulumi/pulumi-aws-native/provider/pkg/naming"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
@@ -73,14 +74,31 @@ type ccapiLookups struct {
 	ccapiClient        CCAPIClient
 	cfnStackResources  map[common.LogicalResourceID]CfnStackResource
 	ccapiResourceCache map[resourceCacheKey][]types.ResourceDescription
+	customResolvers    map[common.ResourceType]customResolver
+	eventsClient       eventsClient
+	region             string
+	account            string
 }
 
-func NewCCApiLookups(ctx context.Context, client *cloudcontrol.Client, cfnStackResources map[common.LogicalResourceID]CfnStackResource) (*ccapiLookups, error) {
-	return &ccapiLookups{
+type eventsClient interface {
+	DescribeRule(ctx context.Context, params *eventbridge.DescribeRuleInput, optFns ...func(*eventbridge.Options)) (*eventbridge.DescribeRuleOutput, error)
+}
+
+type customResolver func(ctx context.Context, logicalID common.LogicalResourceID, primaryProp resource.PropertyKey) (common.PrimaryResourceID, error)
+
+func NewCCApiLookups(ctx context.Context, client *cloudcontrol.Client, cfnStackResources map[common.LogicalResourceID]CfnStackResource, region, account string, eventsClient eventsClient) (*ccapiLookups, error) {
+	c := &ccapiLookups{
 		ccapiClient:        &ccapiClient{client: client},
 		cfnStackResources:  cfnStackResources,
 		ccapiResourceCache: make(map[resourceCacheKey][]types.ResourceDescription),
-	}, nil
+		eventsClient:       eventsClient,
+		region:             region,
+		account:            account,
+	}
+	c.customResolvers = map[common.ResourceType]customResolver{
+		common.ResourceType("AWS::Events::Rule"): c.resolveEventsRule,
+	}
+	return c, nil
 }
 
 func (c *ccapiLookups) FindLogicalResourceID(
@@ -170,6 +188,15 @@ func (c *ccapiLookups) findOwnNativeId(
 			}
 			return id, nil
 		}
+	} else if strategy == metadata.StrategyCustom {
+		if resolver, ok := c.customResolvers[resourceType]; ok {
+			if r, ok := c.cfnStackResources[logicalID]; ok && strings.Contains(string(r.PhysicalID), "|") {
+				return resolver(ctx, logicalID, primaryID)
+			}
+			// If the physical ID isn't composite, fall back to the ARN heuristic/lookup path below.
+		} else {
+			return "", fmt.Errorf("No custom resolver defined for %s", resourceType)
+		}
 	}
 
 	// 2. ARN heuristic: properties ending in 'arn' typically need lookup
@@ -193,6 +220,45 @@ func (c *ccapiLookups) findOwnNativeId(
 		return common.PrimaryResourceID(r.PhysicalID), nil
 	}
 	return "", fmt.Errorf("Resource doesn't exist in this stack which isn't possible!")
+}
+
+func (c *ccapiLookups) resolveEventsRule(
+	ctx context.Context,
+	logicalID common.LogicalResourceID,
+	_ resource.PropertyKey,
+) (common.PrimaryResourceID, error) {
+	if c.eventsClient == nil {
+		return "", fmt.Errorf("missing events client for %s", logicalID)
+	}
+	r, ok := c.cfnStackResources[logicalID]
+	if !ok {
+		return "", fmt.Errorf("Resource %s not found in stack", logicalID)
+	}
+
+	parts := strings.SplitN(string(r.PhysicalID), "|", 2)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("unexpected physical id for Events Rule %q", r.PhysicalID)
+	}
+	busName, ruleName := parts[0], parts[1]
+	if ruleName == "" {
+		return "", fmt.Errorf("rule name missing in physical id for %s", logicalID)
+	}
+
+	input := &eventbridge.DescribeRuleInput{
+		Name: aws.String(ruleName),
+	}
+	if busName != "" {
+		input.EventBusName = aws.String(busName)
+	}
+
+	output, err := c.eventsClient.DescribeRule(ctx, input)
+	if err != nil {
+		return "", fmt.Errorf("describe rule failed for %s: %w", logicalID, err)
+	}
+	if output.Arn == nil || *output.Arn == "" {
+		return "", fmt.Errorf("describe rule returned empty arn for %s", logicalID)
+	}
+	return common.PrimaryResourceID(*output.Arn), nil
 }
 
 // findResourceIdentifier attempts to determine an import id for a resource when

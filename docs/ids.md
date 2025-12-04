@@ -41,6 +41,7 @@ When a resource has a single primary identifier property, we use a three-tier ap
 Check `internal/metadata/ccapi.go` for an explicit `IdPropertyStrategy`:
 - `StrategyPhysicalID`: Use the CloudFormation Physical ID directly
 - `StrategyLookup`: Perform a CCAPI lookup to find the identifier
+- `StrategyCustom`: Delegate to a resource-specific resolver when neither PhysicalID nor CCAPI lookup is workable
 
 ```go
 idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
@@ -138,6 +139,31 @@ idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
 - Default heuristics don't work
 - Need to force a specific behavior
 
+### 3. Custom Resolver (when CCAPI can't list the resource)
+
+Use `StrategyCustom` to plug in a resolver that derives the identifier without CCAPI.
+
+**Example: `AWS::Events::Rule`**
+- Physical ID: `{eventBusName}|{ruleName}`
+- Primary identifier: ARN
+- CCAPI list only works on the default bus, so we can't rely on it for non-default buses.
+- Resolver parses the physical ID, calls `DescribeRule`, and returns the ARN (only when the physical ID is composite):
+
+```go
+// metadata override
+"AWS::Events::Rule": {"arn": StrategyCustom},
+
+// resolver (ccapiLookups)
+bus, rule := splitPhysicalID("bus|rule")
+desc, err := eventsClient.DescribeRule(ctx, &eventbridge.DescribeRuleInput{
+    Name:         aws.String(rule),
+    EventBusName: aws.String(bus), // empty means default bus
+})
+return desc.Arn, err
+```
+
+Add new resolvers by registering them in `customResolvers` on `ccapiLookups`.
+
 ## Code Locations
 
 ### Metadata Layer
@@ -150,6 +176,7 @@ idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
   - `findOwnNativeId()`: Single-property identifier resolution
   - `findCCApiCompositeId()`: Composite identifier resolution
   - `findResourceIdentifier()`: CCAPI lookup with retry logic
+  - `customResolvers`: Map of resource-type-specific resolvers (e.g., Events Rule ARN lookup via DescribeRule)
 - `internal/lookups/aws.go`: Classic AWS provider lookup (for comparison)
 
 ### Tests
@@ -158,6 +185,7 @@ idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
   - Composite identifiers
   - Missing property retry
   - Strategy overrides
+  - Custom resolver behavior (e.g., Events Rule default vs custom bus)
 
 ## Adding Support for New Resources
 
@@ -189,6 +217,11 @@ primaryIdentifierOverrides: map[string][]string{
 
 ### If CCAPI requires extra properties:
 The retry logic should handle this automatically. If it doesn't, check the error message format and update the regex patterns in `findResourceIdentifier()`.
+
+### If CCAPI cannot list the resource (service limitation):
+- Add `StrategyCustom` for the relevant id property in `internal/metadata/ccapi.go`.
+- Register a resolver in `customResolvers` (in `internal/lookups/ccapi.go`) that can derive the identifier from the physical ID and available context (account, region, partition, props).
+- Keep the resolver side-effect free and deterministic so it remains short-test friendly.
 
 ## Design Principles
 

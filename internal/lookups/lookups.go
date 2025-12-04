@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/metadata"
@@ -21,6 +22,7 @@ type Lookups struct {
 	Region            string
 	Account           string
 	CfnStackResources map[common.LogicalResourceID]CfnStackResource
+	EventsClient      *eventbridge.Client
 }
 
 func NewDefaultLookups(ctx context.Context) (*Lookups, error) {
@@ -40,6 +42,7 @@ func NewDefaultLookups(ctx context.Context) (*Lookups, error) {
 		Account:           *res.Account,
 		CfnClient:         cfnClient,
 		CfnStackResources: make(map[common.LogicalResourceID]CfnStackResource),
+		EventsClient:      eventbridge.NewFromConfig(cfg),
 	}, nil
 }
 

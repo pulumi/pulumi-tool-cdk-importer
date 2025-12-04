@@ -39,6 +39,8 @@ const (
 	StrategyPhysicalID IdPropertyStrategy = "PhysicalID"
 	// StrategyLookup means we should perform a CCAPI lookup
 	StrategyLookup IdPropertyStrategy = "Lookup"
+	// StrategyCustom means we should delegate to a resource-specific resolver
+	StrategyCustom IdPropertyStrategy = "Custom"
 )
 
 // See [awsNativeMetadata] var to access this.
@@ -191,6 +193,9 @@ func init() {
 		idPropertyStrategies: map[string]map[string]IdPropertyStrategy{
 			// Only add entries here for resources where the default behavior doesn't work
 			// Most resources will use the default PhysicalID or ARN heuristic
+			"AWS::Events::Rule": {
+				"arn": StrategyCustom,
+			},
 		},
 		listHandlerSchemas: listHandlerSchemas,
 	}
