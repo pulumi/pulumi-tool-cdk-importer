@@ -43,13 +43,13 @@ pulumi plugin run cdk-importer -- program iterate \
 
 - Command: `runtime`
 - Flags: `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--skip-create` (optional), `--verbose`
-- Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, runs `pulumi preview --import-file` to seed the skeleton, then imports into the selected stack and writes a bulk import file (partial on failure) without changing backends.
+- Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, runs `pulumi preview --import-file` to seed the skeleton, then imports into the selected stack and writes an import file containing only placeholder entries for resources that still need manual IDs.
 
 ### Program mode
 
 - Command: `program import`
 - Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--verbose`
-- Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, seeds via preview and writes the bulk import file after import (partial on failure).
+- Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, seeds via preview and writes an import file containing only placeholder entries for resources that still need manual IDs.
 
 ### Program iterate (capture mode)
 
@@ -60,8 +60,8 @@ pulumi plugin run cdk-importer -- program iterate \
 ### Bulk import files
 
 `--import-file` is supported in all commands. Pass `--import-file` with no value to write `import.json`, or supply a path to choose a filename. `program iterate` also defaults to `import.json` when the flag is omitted entirely.
-- `runtime` and `program import` run preview + up against the selected stack, then write the import spec (partial on failure).
-- `program iterate` runs preview + up against the local backend and writes the import spec (partial on failure).
+- `runtime` and `program import` run preview + up against the selected stack, then write an import file that only includes resources still using `<PLACEHOLDER>` IDs (failed/unsupported imports).
+- `program iterate` runs preview + up against the local backend and writes the full enriched import spec (partial on failure) for iterative capture.
 
 The output includes:
 
@@ -69,7 +69,7 @@ The output includes:
 - Full AWS resource metadata (type, logical name, provider reference, component bit, provider version).
 - Any property subsets captured during provider interception (useful for codegen hints).
 
-The resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. Some resources with composite identifiers may show `<PLACEHOLDER>` IDs; fill those in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
+For capture/iterate flows, the resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. When using `runtime` or `program import` with `--import-file`, the written file is trimmed down to only the resources that still have `<PLACEHOLDER>` IDs so you can fill them in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
 
 #### Partial import files and iterative workflows
 

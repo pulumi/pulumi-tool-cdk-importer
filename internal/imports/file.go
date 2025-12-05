@@ -202,3 +202,33 @@ func defaultClassicTokenFromCFType(resourceType common.ResourceType) (tokens.Typ
 	token := fmt.Sprintf("aws:%s/%s:%s", service, module, resourceName)
 	return tokens.Type(token), true
 }
+
+// FilterPlaceholderResources returns a copy of the given file that only contains resources whose IDs
+// are still unresolved placeholders. NameTable is preserved as-is to keep parent/provider references intact.
+func FilterPlaceholderResources(file *File) *File {
+	if file == nil {
+		return nil
+	}
+
+	filtered := make([]Resource, 0, len(file.Resources))
+	for _, res := range file.Resources {
+		if strings.EqualFold(res.ID, placeholderID) {
+			filtered = append(filtered, Resource{
+				Type:        res.Type,
+				Name:        res.Name,
+				ID:          res.ID,
+				LogicalName: res.LogicalName,
+				Properties:  cloneStrings(res.Properties),
+				Component:   res.Component,
+				Version:     res.Version,
+				Parent:      res.Parent,
+				Provider:    res.Provider,
+			})
+		}
+	}
+
+	return &File{
+		NameTable: file.NameTable,
+		Resources: filtered,
+	}
+}

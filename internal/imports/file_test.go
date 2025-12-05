@@ -80,3 +80,41 @@ func TestBuildImportFileSkipsUnsupportedTypes(t *testing.T) {
 	assert.Len(t, summary.SkippedResources, 1)
 	assert.Empty(t, file.Resources)
 }
+
+func TestFilterPlaceholderResources(t *testing.T) {
+	original := &File{
+		NameTable: map[string]string{
+			"parent": "urn:pulumi:dev::app::pulumi:providers:aws::parent",
+		},
+		Resources: []Resource{
+			{
+				Type:        "aws:s3/bucket:Bucket",
+				Name:        "completeBucket",
+				ID:          "bucket-123",
+				LogicalName: "CompleteBucket",
+				Properties:  []string{"tags"},
+			},
+			{
+				Type:        "aws:s3/bucket:Bucket",
+				Name:        "pendingBucket",
+				ID:          placeholderID,
+				LogicalName: "PendingBucket",
+				Parent:      "parent",
+			},
+		},
+	}
+
+	filtered := FilterPlaceholderResources(original)
+	require.NotNil(t, filtered)
+	assert.Equal(t, original.NameTable, filtered.NameTable, "name table should be preserved")
+
+	if assert.Len(t, filtered.Resources, 1) {
+		assert.Equal(t, "pendingBucket", filtered.Resources[0].Name)
+		assert.Equal(t, placeholderID, filtered.Resources[0].ID)
+		assert.Equal(t, "parent", filtered.Resources[0].Parent)
+
+		// Ensure slices are copied
+		original.Resources[1].Properties = []string{"other"}
+		assert.Nil(t, filtered.Resources[0].Properties)
+	}
+}
