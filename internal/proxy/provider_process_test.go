@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -67,6 +68,28 @@ func TestProviderProcessSetWaitRespectsContext(t *testing.T) {
 	}
 }
 
+func TestProviderProcessSetConcurrentAdd(t *testing.T) {
+	t.Parallel()
+
+	var processes providerProcessSet
+	done := make(chan struct{})
+	for i := 0; i < 20; i++ {
+		go func(idx int) {
+			defer func() { done <- struct{}{} }()
+			cmd := helperCommand(t, "exit", "0")
+			processes.add(providerProcess{name: fmt.Sprintf("p-%d", idx), cmd: cmd})
+		}(i)
+	}
+	for i := 0; i < 20; i++ {
+		<-done
+	}
+	processes.mu.Lock()
+	defer processes.mu.Unlock()
+	if len(processes.processes) != 20 {
+		t.Fatalf("expected 20 processes, got %d", len(processes.processes))
+	}
+}
+
 func TestStartProviderProcessNonExecutable(t *testing.T) {
 	t.Parallel()
 
@@ -113,6 +136,9 @@ func TestHelperProcess(t *testing.T) {
 	cmd := args[sep+1]
 	switch cmd {
 	case "sleep":
+		if len(args) <= sep+2 {
+			os.Exit(1)
+		}
 		dur := args[sep+2]
 		if d, err := time.ParseDuration(dur); err == nil {
 			time.Sleep(d)

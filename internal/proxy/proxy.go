@@ -40,10 +40,11 @@ const (
 	aws      = "aws"
 	docker   = "docker-build"
 	// TODO: create workflow to update this
-	awsVersion        = "7.11.0"
-	awsCCApiVersion   = "1.38.0"
-	dockerVersion     = "0.0.7"
-	capturePassphrase = "cdk-importer-local"
+	awsVersion          = "7.11.0"
+	awsCCApiVersion     = "1.38.0"
+	dockerVersion       = "0.0.7"
+	capturePassphrase   = "cdk-importer-local"
+	providerWaitTimeout = 10 * time.Second
 )
 
 // RunMode determines how the proxied Pulumi run should behave.
@@ -439,7 +440,7 @@ func startProxiedProviders(
 
 	cleanup := func() {
 		providerCancel()
-		waitCtx, waitCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), providerWaitTimeout)
 		defer waitCancel()
 		processes.wait(waitCtx, logger)
 	}

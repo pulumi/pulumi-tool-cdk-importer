@@ -78,6 +78,10 @@ func newProviderFactory(name, version string, processes *providerProcessSet) pro
 	}
 }
 
+// startProviderProcess starts a provider binary (or binary within a plugin directory), reads the
+// debug provider port from stdout, and returns the port plus the running command.
+// Stdout/stderr are drained asynchronously; on startup failure the process is killed and stderr is
+// surfaced (up to stderrCaptureLimit bytes).
 func startProviderProcess(ctx context.Context, binaryPath, name, cwd string) (providers.Port, *exec.Cmd, error) {
 	stat, err := os.Stat(binaryPath)
 	if err != nil {
