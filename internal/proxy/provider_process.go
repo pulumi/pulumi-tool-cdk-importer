@@ -55,8 +55,7 @@ func (p *providerProcessSet) wait(ctx context.Context, logger *log.Logger) {
 		select {
 		case <-done:
 		case <-ctx.Done():
-		case <-time.After(5 * time.Second):
-			logger.Printf("provider %s did not exit within timeout", proc.name)
+			logger.Printf("provider %s did not exit before context deadline", proc.name)
 		}
 	}
 }
@@ -154,11 +153,14 @@ func readProviderPort(reader *bufio.Reader) (int, error) {
 }
 
 type cappedBuffer struct {
+	mu  sync.Mutex
 	buf bytes.Buffer
 	cap int64
 }
 
 func (c *cappedBuffer) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	remaining := c.cap - int64(c.buf.Len())
 	if remaining > 0 {
 		if int64(len(p)) <= remaining {
@@ -172,5 +174,7 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 }
 
 func (c *cappedBuffer) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.buf.String()
 }
