@@ -40,10 +40,11 @@ const (
 	aws      = "aws"
 	docker   = "docker-build"
 	// TODO: create workflow to update this
-	awsVersion        = "7.11.0"
-	awsCCApiVersion   = "1.38.0"
-	dockerVersion     = "0.0.7"
-	capturePassphrase = "cdk-importer-local"
+	awsVersion          = "7.11.0"
+	awsCCApiVersion     = "1.38.0"
+	dockerVersion       = "0.0.7"
+	capturePassphrase   = "cdk-importer-local"
+	providerWaitTimeout = 10 * time.Second
 )
 
 // RunMode determines how the proxied Pulumi run should behave.
@@ -98,10 +99,11 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	logger.Println("Starting up providers...")
-	envVars, err := startProxiedProviders(ctx, lookups, pulumiTest{source: workDir}, opts, collector)
+	envVars, stopProviders, err := startProxiedProviders(ctx, logger, lookups, pulumiTest{source: workDir}, opts, collector)
 	if err != nil {
 		return err
 	}
+	defer stopProviders()
 
 	// Merge process environment into envVars
 	// We iterate over os.Environ() and add any missing keys to envVars.
@@ -420,28 +422,41 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 
 func startProxiedProviders(
 	ctx context.Context,
+	logger *log.Logger,
 	lookups *lookups.Lookups,
 	pt providers.PulumiTest,
 	opts RunOptions,
 	collector *CaptureCollector,
-) (map[string]string, error) {
-	ccapiBinary := providers.DownloadPluginBinaryFactory(awsCCApi, awsCCApiVersion)
-	ccapiIntercept := providers.ProviderInterceptFactory(ctx, ccapiBinary, awsCCApiInterceptors(lookups, opts, collector))
-	awsBinary := providers.DownloadPluginBinaryFactory(aws, awsVersion)
-	awsIntercept := providers.ProviderInterceptFactory(ctx, awsBinary, awsInterceptors(lookups, opts, collector))
-	dockerBinary := providers.DownloadPluginBinaryFactory(docker, dockerVersion)
-	dockerIntercept := providers.ProviderInterceptFactory(ctx, dockerBinary, dockerInterceptors())
-	ps, err := providers.StartProviders(ctx, map[providers.ProviderName]providers.ProviderFactory{
+) (map[string]string, func(), error) {
+	providerCtx, providerCancel := context.WithCancel(ctx)
+	processes := &providerProcessSet{}
+
+	ccapiBinary := newProviderFactory(awsCCApi, awsCCApiVersion, processes)
+	ccapiIntercept := providers.ProviderInterceptFactory(providerCtx, ccapiBinary, awsCCApiInterceptors(lookups, opts, collector))
+	awsBinary := newProviderFactory(aws, awsVersion, processes)
+	awsIntercept := providers.ProviderInterceptFactory(providerCtx, awsBinary, awsInterceptors(lookups, opts, collector))
+	dockerBinary := newProviderFactory(docker, dockerVersion, processes)
+	dockerIntercept := providers.ProviderInterceptFactory(providerCtx, dockerBinary, dockerInterceptors())
+
+	cleanup := func() {
+		providerCancel()
+		waitCtx, waitCancel := context.WithTimeout(context.Background(), providerWaitTimeout)
+		defer waitCancel()
+		processes.wait(waitCtx, logger)
+	}
+
+	ps, err := providers.StartProviders(providerCtx, map[providers.ProviderName]providers.ProviderFactory{
 		"aws-native":   ccapiIntercept,
 		"aws":          awsIntercept,
 		"docker-build": dockerIntercept,
 	}, pt)
 	if err != nil {
-		return nil, err
+		cleanup()
+		return nil, func() {}, err
 	}
 	return map[string]string{
 		"PULUMI_DEBUG_PROVIDERS": providers.GetDebugProvidersEnv(ps),
-	}, nil
+	}, cleanup, nil
 }
 
 func dockerInterceptors() providers.ProviderInterceptors {
