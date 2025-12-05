@@ -56,11 +56,16 @@ func (p *providerProcessSet) wait(ctx context.Context, logger *log.Logger) {
 		case <-done:
 		case <-ctx.Done():
 			logger.Printf("provider %s did not exit before context deadline", proc.name)
+			select {
+			case <-done:
+			case <-time.After(200 * time.Millisecond):
+				logger.Printf("provider %s still running after context deadline", proc.name)
+			}
 		}
 	}
 }
 
-// newProviderFactory starts a provider binary with stdio detached from the parent process and tracks it for cleanup.
+// newProviderFactory starts a provider binary with stdio piped and drained, and tracks it for cleanup.
 func newProviderFactory(name, version string, processes *providerProcessSet) providers.ProviderFactory {
 	return func(ctx context.Context, pt providers.PulumiTest) (providers.Port, error) {
 		binaryPath, err := providers.DownloadPluginBinary(name, version)

@@ -63,7 +63,7 @@ func TestProviderProcessSetWaitRespectsContext(t *testing.T) {
 
 	start := time.Now()
 	processes.wait(ctx, discardLogger(t))
-	if time.Since(start) > 500*time.Millisecond {
+	if time.Since(start) > 400*time.Millisecond {
 		t.Fatalf("wait did not respect context deadline")
 	}
 }
