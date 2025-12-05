@@ -78,14 +78,15 @@ func run(cfg runConfig) error {
 	}
 
 	options := proxy.RunOptions{
-		Mode:             mode,
-		ImportFilePath:   importPath,
-		SkipCreate:       skipCreateMode,
-		KeepImportState:  keepState,
-		LocalStackFile:   localStack,
-		StackNames:       cfg.stacks,
-		Verbose:          cfg.verbose,
-		UsePreviewImport: cfg.usePreviewImport || importPath != "",
+		Mode:                   mode,
+		ImportFilePath:         importPath,
+		SkipCreate:             skipCreateMode,
+		KeepImportState:        keepState,
+		LocalStackFile:         localStack,
+		StackNames:             cfg.stacks,
+		Verbose:                cfg.verbose,
+		UsePreviewImport:       cfg.usePreviewImport || importPath != "",
+		FilterPlaceholdersOnly: mode == proxy.RunPulumi && importPath != "",
 	}
 
 	return proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options)

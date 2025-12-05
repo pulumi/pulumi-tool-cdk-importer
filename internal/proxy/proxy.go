@@ -58,15 +58,16 @@ const (
 
 // RunOptions surfaces CLI decisions (mode, import path) into the proxy layer.
 type RunOptions struct {
-	Mode             RunMode
-	ImportFilePath   string
-	Collector        *CaptureCollector
-	SkipCreate       bool
-	KeepImportState  bool
-	LocalStackFile   string
-	StackNames       []string
-	Verbose          int
-	UsePreviewImport bool
+	Mode                   RunMode
+	ImportFilePath         string
+	Collector              *CaptureCollector
+	SkipCreate             bool
+	KeepImportState        bool
+	LocalStackFile         string
+	StackNames             []string
+	Verbose                int
+	UsePreviewImport       bool
+	FilterPlaceholdersOnly bool
 }
 
 type pulumiTest struct {
@@ -170,7 +171,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 			logger.Printf("Warning: pulumi up encountered errors, writing partial import file")
 		}
 
-		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil, skeleton)
+		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil, skeleton, opts.FilterPlaceholdersOnly)
 		if finalizeErr != nil {
 			logger.Printf("Error writing import file: %v", finalizeErr)
 			// Return the finalize error if Up succeeded, otherwise return Up error
@@ -344,7 +345,7 @@ func runPreviewForImportFile(ctx context.Context, logger *log.Logger, stack auto
 	return file, nil
 }
 
-func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, skeleton *imports.File) error {
+func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, skeleton *imports.File, placeholdersOnly bool) error {
 	if len(deployment.Deployment) == 0 {
 		logger.Println("Exported stack deployment is empty; capture file will only include intercepted resources")
 	} else {
@@ -379,6 +380,17 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	}
 	if skeleton != nil {
 		file = imports.MergeWithSkeleton(skeleton, file)
+	}
+	if placeholdersOnly {
+		originalCount := len(file.Resources)
+		file = imports.FilterPlaceholderResources(file)
+		filtered := len(file.Resources)
+		switch {
+		case filtered == 0:
+			logger.Println("No placeholder resources found; import file will be empty")
+		case filtered != originalCount:
+			logger.Printf("Filtered import file down to %d placeholder resources (from %d total)", filtered, originalCount)
+		}
 	}
 	if err := imports.WriteFile(path, file); err != nil {
 		return err
