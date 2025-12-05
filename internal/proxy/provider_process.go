@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,7 +80,16 @@ func newProviderFactory(name, version string, processes *providerProcessSet) pro
 }
 
 func startProviderProcess(ctx context.Context, binaryPath, name, cwd string) (providers.Port, *exec.Cmd, error) {
-	cmd := exec.CommandContext(ctx, binaryPath)
+	stat, err := os.Stat(binaryPath)
+	if err != nil {
+		return 0, nil, err
+	}
+	pathToExec := binaryPath
+	if stat.IsDir() {
+		pathToExec = filepath.Join(binaryPath, "pulumi-resource-"+name)
+	}
+
+	cmd := exec.CommandContext(ctx, pathToExec)
 	cmd.Dir = cwd
 
 	stdout, err := cmd.StdoutPipe()
