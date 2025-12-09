@@ -132,7 +132,7 @@ func (c *ccapiLookups) FindPrimaryResourceID(
 	default:
 		// TODO: debug logging
 		// fmt.Printf("Rendering Resource Models for %s - %s: Parts: %v: Props: %v", resourceType, logicalID, idParts, props)
-		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
+		resourceModel, err := renderResourceModel(resourceType, idParts, props, func(s string) string {
 			return naming.ToCfnName(string(s), nil)
 		})
 		if err != nil {
@@ -274,11 +274,6 @@ func (c *ccapiLookups) findResourceIdentifier(
 	suffix string,
 	resourceModel map[string]string,
 ) (common.PrimaryResourceID, error) {
-	var err error
-	resourceModel, err = c.applyListHandlerResourceModel(resourceType, logicalID, resourceModel)
-	if err != nil {
-		return "", fmt.Errorf("could not build list handler resource model for %s: %w", logicalID, err)
-	}
 	resources, err := c.listResources(ctx, resourceType, resourceModel)
 	if err != nil {
 		fmt.Printf("Error listing resource: %s, %v, %v\n", resourceType, resourceModel, err)
@@ -313,12 +308,10 @@ func (c *ccapiLookups) findResourceIdentifier(
 
 			if missingProperty != "" {
 				fmt.Printf("Found missing property for %s %s: %s", resourceType, logicalID, missingProperty)
-				// create a correct resource model with the missing property
-				resourceModel, err = renderResourceModel([]resource.PropertyKey{
-					resource.PropertyKey(missingProperty),
-				}, c.cfnStackResources[logicalID].Props, func(s string) string {
+				required := []resource.PropertyKey{resource.PropertyKey(missingProperty)}
+				resourceModel, err = renderResourceModel(resourceType, nil, c.cfnStackResources[logicalID].Props, func(s string) string {
 					return s
-				})
+				}, required...)
 				if err != nil {
 					return "", fmt.Errorf("Error rendering resource model: %w", err)
 				}
@@ -348,51 +341,6 @@ func (c *ccapiLookups) findResourceIdentifier(
 	}
 
 	return "", fmt.Errorf("could not find resource identifier for type: %s: %v", resourceType, resourceModel)
-}
-
-func (c *ccapiLookups) applyListHandlerResourceModel(
-	resourceType common.ResourceType,
-	logicalID common.LogicalResourceID,
-	resourceModel map[string]string,
-) (map[string]string, error) {
-	md := metadata.NewCCApiMetadataSource()
-	required := md.ListHandlerRequiredProperties(resourceType)
-	if len(required) == 0 {
-		return resourceModel, nil
-	}
-
-	mergedModel := make(map[string]string, len(resourceModel)+len(required))
-	for k, v := range resourceModel {
-		mergedModel[k] = v
-	}
-
-	missing := []resource.PropertyKey{}
-	for _, prop := range required {
-		if _, ok := mergedModel[prop]; ok {
-			continue
-		}
-		missing = append(missing, resource.PropertyKey(prop))
-	}
-
-	if len(missing) == 0 {
-		return mergedModel, nil
-	}
-
-	stackResource, ok := c.cfnStackResources[logicalID]
-	if !ok {
-		return mergedModel, nil
-	}
-
-	derived, err := renderResourceModel(missing, stackResource.Props, func(s string) string { return s })
-	if err != nil {
-		return nil, err
-	}
-
-	for k, v := range derived {
-		mergedModel[k] = v
-	}
-
-	return mergedModel, nil
 }
 
 // listResources lists resources of a given type from the CCAPI

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/common"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/stretchr/testify/assert"
 )
@@ -133,5 +134,17 @@ func TestFindAwsPrimaryResourceID(t *testing.T) {
 		actual, err := awsLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
 		assert.NoError(t, err)
 		assert.Equal(t, common.PrimaryResourceID(queueURL), actual)
+	})
+
+	t.Run("composite identifier falls back to physical id", func(t *testing.T) {
+		parts, err := buildIdentifierParts(
+			[]resource.PropertyKey{resource.PropertyKey("bucket"), resource.PropertyKey("suffix")},
+			map[string]any{
+				"bucket": "my-bucket",
+			},
+			"physical-suffix",
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"my-bucket", "physical-suffix"}, parts)
 	})
 }
