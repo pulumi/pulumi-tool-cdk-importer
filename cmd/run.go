@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -29,6 +30,7 @@ type runConfig struct {
 	invocationDir    string
 	usePreviewImport bool
 	verbose          int
+	stdout           io.Writer
 }
 
 func run(cfg runConfig) error {
@@ -36,7 +38,12 @@ func run(cfg runConfig) error {
 		return err
 	}
 
-	logger := logging.New(os.Stdout, cfg.verbose, "component", "cdk-importer")
+	w := cfg.stdout
+	if w == nil {
+		w = os.Stdout
+	}
+	// The writer for the logger could be passed in `cfg` for better testability/flexibility.
+	logger := logging.New(w, cfg.verbose, "component", "cdk-importer")
 	ctx := context.Background()
 
 	if err := os.Chdir(cfg.workDir); err != nil {

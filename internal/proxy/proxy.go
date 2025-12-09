@@ -190,7 +190,9 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 		}
 	}
 	logger.Info("Importing stack...")
-	result, upErr := stack.Up(ctx,
+	var result auto.UpResult
+	upErr := error(nil)
+	result, upErr = stack.Up(ctx,
 		optup.ContinueOnError(),
 		optup.ProgressStreams(progressWriter),
 		optup.ErrorProgressStreams(errorWriter),

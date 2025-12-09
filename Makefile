@@ -1,6 +1,6 @@
-WORKING_DIR		:= $(shell pwd)
+WORKING_DIR            := $(shell pwd)
 PACK             := pulumi-tool-cdk-importer
-LOCAL_VERSION ?= 1.0.0-alpha.0+dev
+LOCAL_VERSION := 1.0.0-alpha.0+dev # For local_install target only. To override, set LOCAL_VERSION environment variable.
 
 build:
 	go build -o $(WORKING_DIR)/bin/$(PACK)

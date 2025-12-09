@@ -29,7 +29,7 @@ func (i *awsInterceptor) create(
 ) (*pulumirpc.CreateResponse, error) {
 	logger := i.logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = slog.Default() // Consider if a panic/error is more appropriate if logger is expected to be non-nil.
 	}
 	urn, err := resource.ParseURN(in.GetUrn())
 	if err != nil {

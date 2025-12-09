@@ -29,7 +29,7 @@ func (i *awsCCApiInterceptor) create(
 ) (*pulumirpc.CreateResponse, error) {
 	logger := i.logger
 	if logger == nil {
-		logger = slog.Default()
+		logger = slog.Default() // Consider if a panic/error is more appropriate if logger is expected to be non-nil.
 	}
 	c, err := lookups.NewCCApiLookups(ctx, i.CCAPIClient, i.CfnStackResources, i.Region, i.Account, i.EventsClient)
 	if err != nil {

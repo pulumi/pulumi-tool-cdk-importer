@@ -309,7 +309,7 @@ func (c *ccapiLookups) findResourceIdentifier(
 			if missingProperty != "" {
 				fmt.Printf("Found missing property for %s %s: %s", resourceType, logicalID, missingProperty)
 				required := []resource.PropertyKey{resource.PropertyKey(missingProperty)}
-				resourceModel, err = renderResourceModel(resourceType, nil, c.cfnStackResources[logicalID].Props, func(s string) string {
+				resourceModel, err = renderResourceModel(resourceType, []resource.PropertyKey{}, c.cfnStackResources[logicalID].Props, func(s string) string {
 					return s
 				}, required...)
 				if err != nil {

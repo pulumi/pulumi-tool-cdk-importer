@@ -36,6 +36,7 @@ type friendlyHandler struct {
 	minLevel slog.Level
 	w        io.Writer
 	static   []any
+	prefix   string
 }
 
 func (h *friendlyHandler) Enabled(_ context.Context, lvl slog.Level) bool {
@@ -56,6 +57,9 @@ func (h *friendlyHandler) Handle(_ context.Context, r slog.Record) error {
 		attrs = append(attrs, slog.Any(fmt.Sprint(h.static[i]), h.static[i+1]))
 	}
 	r.Attrs(func(a slog.Attr) bool {
+		if h.prefix != "" {
+			a.Key = h.prefix + a.Key
+		}
 		attrs = append(attrs, a)
 		return true
 	})
@@ -65,7 +69,7 @@ func (h *friendlyHandler) Handle(_ context.Context, r slog.Record) error {
 			if idx > 0 {
 				b.WriteString(" ")
 			}
-			fmt.Fprintf(&b, "%s=%v", a.Key, a.Value.Any())
+			fmt.Fprintf(&b, "%s=%q", a.Key, a.Value.Any())
 		}
 	}
 	h.mu.Lock()
@@ -78,16 +82,28 @@ func (h *friendlyHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	static := make([]any, 0, len(h.static)+len(attrs)*2)
 	static = append(static, h.static...)
 	for _, a := range attrs {
-		static = append(static, a.Key, a.Value.Any())
+		key := a.Key
+		if h.prefix != "" {
+			key = h.prefix + key
+		}
+		static = append(static, key, a.Value.Any())
 	}
 	return &friendlyHandler{
 		minLevel: h.minLevel,
 		w:        h.w,
 		static:   static,
+		prefix:   h.prefix,
 	}
 }
 
-func (h *friendlyHandler) WithGroup(string) slog.Handler {
-	// Grouping is ignored for the friendly handler; keep attrs flat.
-	return h
+func (h *friendlyHandler) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return h
+	}
+	return &friendlyHandler{
+		minLevel: h.minLevel,
+		w:        h.w,
+		static:   h.static,
+		prefix:   h.prefix + name + ".",
+	}
 }

@@ -99,7 +99,7 @@ func buildIdentifierParts(
 			usedPhysical = true
 			continue
 		}
-		return nil, fmt.Errorf("Couldn't find an import id for identifier part %q", idPart)
+		return nil, fmt.Errorf("couldn't find an import id for identifier part %q; neither in props nor as an available physical ID", idPart)
 	}
 
 	return parts, nil
