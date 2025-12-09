@@ -51,6 +51,7 @@ func (m *mockMetadataSource) Separator(resourceToken tokens.Type) string {
 func Test_renderResourceModel(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
 		actual, err := renderResourceModel(
+			common.ResourceType("AWS::ApiGatewayV2::Stage"),
 			[]resource.PropertyKey{
 				resource.PropertyKey("ApiId"),
 				resource.PropertyKey("StageName"),
@@ -68,6 +69,7 @@ func Test_renderResourceModel(t *testing.T) {
 
 	t.Run("with name transform", func(t *testing.T) {
 		actual, err := renderResourceModel(
+			common.ResourceType("AWS::ApiGatewayV2::Stage"),
 			[]resource.PropertyKey{
 				resource.PropertyKey("apiId"),
 				resource.PropertyKey("stageName"),
@@ -85,6 +87,7 @@ func Test_renderResourceModel(t *testing.T) {
 
 	t.Run("falls back to original casing when transformed key missing", func(t *testing.T) {
 		actual, err := renderResourceModel(
+			common.ResourceType("AWS::ApplicationAutoScaling::ScalingPolicy"),
 			[]resource.PropertyKey{
 				resource.PropertyKey("policyName"),
 				resource.PropertyKey("resourceId"),
@@ -99,6 +102,25 @@ func Test_renderResourceModel(t *testing.T) {
 		assert.Equal(t, map[string]string{
 			"PolicyName": "MyPolicy",
 			"ResourceId": "service/app/name",
+		}, actual)
+	})
+
+	t.Run("derives missing properties using heuristics", func(t *testing.T) {
+		actual, err := renderResourceModel(
+			common.ResourceType("AWS::ApplicationAutoScaling::ScalingPolicy"),
+			[]resource.PropertyKey{
+				resource.PropertyKey("ScalableDimension"),
+				resource.PropertyKey("ServiceNamespace"),
+			},
+			map[string]interface{}{
+				"ScalableDimension": "ecs:service:DesiredCount",
+			},
+			func(s string) string { return s },
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"ScalableDimension": "ecs:service:DesiredCount",
+			"ServiceNamespace":  "ecs",
 		}, actual)
 	})
 }

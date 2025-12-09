@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/golang/glog"
+	"log/slog"
+
 	"github.com/pkg/errors"
 	nResources "github.com/pulumi/pulumi-aws-native/provider/pkg/resources"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
@@ -18,6 +19,7 @@ type awsCCApiInterceptor struct {
 	*lookups.Lookups
 	mode      RunMode
 	collector *CaptureCollector
+	logger    *slog.Logger
 }
 
 func (i *awsCCApiInterceptor) create(
@@ -25,6 +27,10 @@ func (i *awsCCApiInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
+	logger := i.logger
+	if logger == nil {
+		logger = slog.Default() // Consider if a panic/error is more appropriate if logger is expected to be non-nil.
+	}
 	c, err := lookups.NewCCApiLookups(ctx, i.CCAPIClient, i.CfnStackResources, i.Region, i.Account, i.EventsClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API Client for CCAPI: %w", err)
@@ -72,7 +78,7 @@ func (i *awsCCApiInterceptor) create(
 	if err != nil {
 		return nil, err
 	}
-	glog.V(1).Infof("Importing resourceType %s with ID %s for URN %s ...", urn.Type().String(), string(prim), string(urn))
+	logger.Debug("Importing resource", "resourceType", urn.Type().String(), "id", string(prim), "urn", string(urn))
 	if i.mode == CaptureImports && i.collector != nil {
 		properties := collectPropertyKeys(inputs)
 		i.collector.Append(Capture{

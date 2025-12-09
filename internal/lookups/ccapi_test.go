@@ -444,18 +444,7 @@ func TestFindPrimaryResourceID(t *testing.T) {
 					var model map[string]string
 					_ = json.Unmarshal([]byte(*resourceModel), &model)
 
-					// First call: Only ScalableDimension (Arn is not in props, it's an output)
-					if len(model) == 1 && model["ScalableDimension"] == "ecs:service:DesiredCount" {
-						return &mockListResourcesPager{
-							typeName: "AWS::ApplicationAutoScaling::ScalingPolicy",
-							err: &types.InvalidRequestException{
-								Message: aws.String("InvalidRequestException: Missing or invalid ResourceModel property... Required property: (#: required key [ServiceNamespace] not found)"),
-							},
-						}
-					}
-
-					// Second call: Only ServiceNamespace (the missing property extracted from error)
-					if len(model) == 1 && model["ServiceNamespace"] == "ecs" {
+					if len(model) == 2 && model["ScalableDimension"] == "ecs:service:DesiredCount" && model["ServiceNamespace"] == "ecs" {
 						return &mockListResourcesPager{
 							typeName: "AWS::ApplicationAutoScaling::ScalingPolicy",
 							resourceDescriptions: []types.ResourceDescription{

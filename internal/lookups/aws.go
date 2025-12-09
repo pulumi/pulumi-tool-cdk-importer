@@ -55,16 +55,12 @@ func (a *awsLookups) FindPrimaryResourceID(
 		return a.findOwnAwsId(resourceType, logicalID, idParts[0], props)
 	default:
 		// if there are multiple primary identifiers, then we probably need to use all of them
-		// to find the resource. There is also probably a resource model that we need to use
-		// in the CCAPI ListResources API call
-		resourceModel, err := renderResourceModel(idParts, props, func(s string) string {
-			return s
-		})
+		parts, err := buildIdentifierParts(idParts, props, string(a.cfnStackResources[logicalID].PhysicalID))
 		if err != nil {
 			return "", err
 		}
 		separator := metadataSource.Separator(resourceToken)
-		return a.findAwsCompositeId(logicalID, idParts, resourceModel, separator)
+		return common.PrimaryResourceID(strings.Join(parts, separator)), nil
 	}
 }
 
@@ -79,34 +75,34 @@ func (a *awsLookups) getArnForResource(resourceType common.ResourceType, name st
 	return "", fmt.Errorf("Arn lookup for resourceType %q not supported", resourceType)
 }
 
-// findAwsCompositeId returns a lookup id for an AWS resource where
-// the lookup id contains multiple values
-func (a *awsLookups) findAwsCompositeId(
-	logicalID common.LogicalResourceID,
+// buildIdentifierParts assembles identifier segments in order using provided props, falling back to
+// the CloudFormation physical ID for the first missing segment only. It errors if a segment is
+// missing and the physical ID has already been consumed, or if a prop is present but not a string.
+func buildIdentifierParts(
 	idParts []resource.PropertyKey,
-	resourceModel map[string]string,
-	separator string,
-) (common.PrimaryResourceID, error) {
-	if r, ok := a.cfnStackResources[logicalID]; ok {
-		physicalID := string(r.PhysicalID)
+	props map[string]any,
+	physicalID string,
+) ([]string, error) {
+	parts := make([]string, 0, len(idParts))
+	usedPhysical := false
 
-		parts := make([]string, 0, len(idParts))
-		for _, idPart := range idParts {
-			if val, ok := resourceModel[string(idPart)]; ok {
-				parts = append(parts, val)
+	for _, idPart := range idParts {
+		if val, ok := props[string(idPart)]; ok {
+			if s, ok := val.(string); ok && s != "" {
+				parts = append(parts, s)
 				continue
 			}
-			if physicalID != "" {
-				parts = append(parts, physicalID)
-				physicalID = ""
-				continue
-			}
-			return "", fmt.Errorf("Couldn't find an import id for resource with logicalID %q", logicalID)
+			return nil, fmt.Errorf("expected id property %q to be a string; got %v", idPart, val)
 		}
-
-		return common.PrimaryResourceID(strings.Join(parts, separator)), nil
+		if !usedPhysical && physicalID != "" {
+			parts = append(parts, physicalID)
+			usedPhysical = true
+			continue
+		}
+		return nil, fmt.Errorf("couldn't find an import id for identifier part %q; neither in props nor as an available physical ID", idPart)
 	}
-	return "", fmt.Errorf("Couldn't find an import id for resource with logicalID %q", logicalID)
+
+	return parts, nil
 }
 
 // findOwnAwsId should only be used when the resource only has a single element in it's identifier

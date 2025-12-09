@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -95,7 +95,7 @@ func TestFinalizeCaptureWithPartialResults(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	importPath := filepath.Join(tmpDir, "import.json")
-	logger := log.New(os.Stdout, "[test] ", log.Ltime)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	collector := NewCaptureCollector()
 	collector.Append(Capture{
@@ -132,7 +132,7 @@ func TestFinalizeCaptureLogsPartialStatus(t *testing.T) {
 
 	// Capture log output
 	var logOutput []byte
-	logger := log.New(&testWriter{output: &logOutput}, "[test] ", 0)
+	logger := slog.New(slog.NewTextHandler(&testWriter{output: &logOutput}, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	collector := NewCaptureCollector()
 	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil, false)
@@ -147,7 +147,7 @@ func TestFinalizeCaptureFiltersPlaceholders(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	importPath := filepath.Join(tmpDir, "import.json")
-	logger := log.New(io.Discard, "", 0)
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	collector := NewCaptureCollector()
 	collector.Append(Capture{

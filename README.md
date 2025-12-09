@@ -42,19 +42,19 @@ pulumi plugin run cdk-importer -- program iterate \
 ### Runtime mode
 
 - Command: `runtime`
-- Flags: `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--skip-create` (optional), `--verbose`
+- Flags: `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--skip-create` (optional), `-v/--verbose`, `--debug` (importer debug logs only)
 - Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, runs `pulumi preview --import-file` to seed the skeleton, then imports into the selected stack and writes an import file containing only placeholder entries for resources that still need manual IDs.
 
 ### Program mode
 
 - Command: `program import`
-- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--verbose`
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `-v/--verbose`, `--debug`
 - Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, seeds via preview and writes an import file containing only placeholder entries for resources that still need manual IDs.
 
 ### Program iterate (capture mode)
 
 - Command: `program iterate`
-- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json`), `--verbose`
+- Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json`), `-v/--verbose`, `--debug`
 - Behavior: Runs against a persistent local file backend at `.pulumi/import-state.json` (relative to your invocation dir), forces `skip-create`, seeds the import file with `pulumi preview --import-file`, and always writes the enriched import file (partial on failure). Use this for iterative capture without touching your real stack; the local backend is kept for reuse between runs.
 
 ### Bulk import files

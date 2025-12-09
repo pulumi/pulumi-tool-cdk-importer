@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/golang/glog"
+	"log/slog"
+
 	"github.com/pkg/errors"
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
@@ -18,6 +19,7 @@ type awsInterceptor struct {
 	mode       RunMode
 	skipCreate bool
 	collector  *CaptureCollector
+	logger     *slog.Logger
 }
 
 func (i *awsInterceptor) create(
@@ -25,6 +27,10 @@ func (i *awsInterceptor) create(
 	in *pulumirpc.CreateRequest,
 	client pulumirpc.ResourceProviderClient,
 ) (*pulumirpc.CreateResponse, error) {
+	logger := i.logger
+	if logger == nil {
+		logger = slog.Default() // Consider if a panic/error is more appropriate if logger is expected to be non-nil.
+	}
 	urn, err := resource.ParseURN(in.GetUrn())
 	if err != nil {
 		return nil, err
@@ -57,7 +63,7 @@ func (i *awsInterceptor) create(
 			}
 			return nil, fmt.Errorf("resource type %s is not supported in capture mode", resourceType)
 		}
-		glog.V(1).Infof("Resource type %s is not supported for import, creating instead", resourceType)
+		logger.Info("Resource type is not supported for import; creating instead", "resourceType", resourceType)
 		return client.Create(ctx, in)
 	}
 	c := lookups.NewAwsLookups(i.CfnStackResources, i.Region, i.Account)
@@ -80,7 +86,7 @@ func (i *awsInterceptor) create(
 		return nil, err
 	}
 
-	glog.V(4).Infof("Importing resourceType %s with ID %s for URN %s ...", resourceType, string(prim), string(urn))
+	logger.Debug("Importing resource", "resourceType", resourceType, "id", string(prim), "urn", string(urn))
 	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
 		Id:  string(prim),
 		Urn: string(urn),
@@ -110,7 +116,11 @@ func (i *awsInterceptor) create(
 }
 
 func (i *awsInterceptor) stubSkippedCreate(resourceType string, urn resource.URN, req *pulumirpc.CreateRequest) (*pulumirpc.CreateResponse, error) {
-	glog.V(1).Infof("Skipping creation of %s (%s) due to skip-create flag", string(urn.Name()), resourceType)
+	logger := i.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.Info("Skipping creation due to skip-create flag", "logicalName", string(urn.Name()), "resourceType", resourceType)
 	if i.collector != nil {
 		i.collector.Skip(SkippedCapture{
 			Type:        resourceType,

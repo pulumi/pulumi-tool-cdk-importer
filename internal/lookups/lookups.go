@@ -63,16 +63,41 @@ type CfnStackResource struct {
 	Props map[string]any
 }
 
-// renderResourceModel create a CCAPI resource model to use when making a
-// CCAPI ListResources API call.
-// There is no schema for the resource model so we have to use some heuristics
+// renderResourceModel creates a CCAPI resource model to use when making a
+// CCAPI ListResources API call. It seeds required properties from metadata's
+// list handler schema and falls back to heuristics (deriveMissingProperty) when
+// inputs are absent or derived from other fields.
 //
 // idParts are the properties that make up the primary identifier of the resource, i.e. [apiId, routeId]
 // props are the input properties of the resource
 // resourceKey is a function that can be used to transform a value, e.g. convert to a CFN name
-func renderResourceModel(idParts []resource.PropertyKey, props map[string]any, resourceKey func(string) string) (map[string]string, error) {
+// additionalRequired lets callers force extra properties (e.g. missing-property errors) beyond the
+// list handler requirements we derive from metadata.
+func renderResourceModel(
+	resourceType common.ResourceType,
+	idParts []resource.PropertyKey,
+	props map[string]any,
+	resourceKey func(string) string,
+	additionalRequired ...resource.PropertyKey,
+) (map[string]string, error) {
+	required := []resource.PropertyKey{}
+	for _, prop := range metadata.NewCCApiMetadataSource().ListHandlerRequiredProperties(resourceType) {
+		required = append(required, resource.PropertyKey(prop))
+	}
+	required = append(required, additionalRequired...)
+
+	mergedParts := make([]resource.PropertyKey, 0, len(idParts)+len(required))
+	seen := map[resource.PropertyKey]struct{}{}
+	for _, part := range append(append([]resource.PropertyKey{}, idParts...), required...) {
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		mergedParts = append(mergedParts, part)
+	}
+
 	model := map[string]string{}
-	for _, part := range idParts {
+	for _, part := range mergedParts {
 		cfnName := resourceKey(string(part))
 		if prop, ok := props[cfnName]; ok {
 			if val, ok := prop.(string); ok {
@@ -88,6 +113,13 @@ func renderResourceModel(idParts []resource.PropertyKey, props map[string]any, r
 				model[cfnName] = val
 			} else {
 				return nil, fmt.Errorf("expected id property %q to be a string; got %v", cfnName, prop)
+			}
+			continue
+		}
+
+		if derived := deriveMissingProperty(resourceType, string(part), props); len(derived) > 0 {
+			for k, v := range derived {
+				model[k] = v
 			}
 		}
 	}

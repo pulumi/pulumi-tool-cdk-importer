@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,9 +112,9 @@ func helperCommand(t *testing.T, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func discardLogger(t *testing.T) *log.Logger {
+func discardLogger(t *testing.T) *slog.Logger {
 	t.Helper()
-	return log.New(io.Discard, "", 0)
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 // TestHelperProcess is executed as a subprocess to simulate controllable command behavior.

@@ -8,6 +8,7 @@ import (
 )
 
 var verbose int
+var debugLogging bool
 
 // Execute runs the CLI.
 func Execute() {
@@ -25,6 +26,7 @@ func newRootCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().IntVarP(&verbose, "verbose", "v", 0, "Enable verbose logging (0-9)")
+	cmd.PersistentFlags().BoolVar(&debugLogging, "debug", false, "Enable debug-level logging for the importer")
 	cmd.AddCommand(newRuntimeCommand(), newProgramCommand())
 
 	return cmd

@@ -17,7 +17,8 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"log"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ type ProxiesConfig struct {
 	CfnStackResources map[common.LogicalResourceID]lookups.CfnStackResource
 }
 
-func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lookups.Lookups, workDir string, opts RunOptions) error {
+func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *lookups.Lookups, workDir string, opts RunOptions) error {
 	if opts.Mode == CaptureImports && opts.ImportFilePath == "" {
 		return fmt.Errorf("import file path is required when capturing imports")
 	}
@@ -98,7 +99,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	logger.Println("Starting up providers...")
+	logger.Info("Starting up providers...")
 	envVars, stopProviders, err := startProxiedProviders(ctx, logger, lookups, pulumiTest{source: workDir}, opts, collector)
 	if err != nil {
 		return err
@@ -124,26 +125,59 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 
 	var stack auto.Stack
 	var cleanup func()
+	status := "unknown"
+	resourcesImported := 0
+	resourcesFailedToImport := 0
+	var upResult *auto.UpResult
+	primaryStack := ""
+	if len(opts.StackNames) > 0 {
+		primaryStack = opts.StackNames[0]
+	}
+	defer func() {
+		importPath := opts.ImportFilePath
+		importExists := false
+		if importPath != "" {
+			if _, err := os.Stat(importPath); err == nil {
+				importExists = true
+			}
+		}
+		l := logger.With(
+			"status", status,
+			"resourcesImported", resourcesImported,
+			"resourcesFailedToImport", resourcesFailedToImport,
+		)
+		if primaryStack != "" {
+			l = l.With("stack", primaryStack)
+		}
+		if importPath != "" {
+			l = l.With("importFile", importPath, "importFileExists", importExists)
+		}
+		l.Info("Run complete")
+	}()
 	if opts.Mode == CaptureImports {
 		stack, cleanup, err = prepareCaptureStack(ctx, logger, workDir, envVars, opts)
 	} else {
 		stack, err = prepareSelectedStack(ctx, workDir, envVars)
 	}
 	if err != nil {
+		status = "failed"
+		resourcesFailedToImport = 1
 		return err
 	}
 	if cleanup != nil {
 		defer cleanup()
 	}
-	level := uint(1)
-	debugOptions := debug.LoggingOptions{
-		LogLevel: &level,
-	}
+	progressWriter := io.Discard
+	errorWriter := io.Discard
+	debugOptions := debug.LoggingOptions{}
 	if opts.Verbose > 0 {
-		level = uint(opts.Verbose)
+		level := uint(opts.Verbose)
+		debugOptions.LogLevel = &level
 		debugOptions.FlowToPlugins = true
 		debugOptions.LogToStdErr = true
 		debugOptions.Debug = true
+		progressWriter = os.Stdout
+		errorWriter = os.Stdout
 	}
 	var skeleton *imports.File
 	if opts.ImportFilePath != "" && opts.UsePreviewImport {
@@ -152,44 +186,57 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *log.Logger, lookups *lo
 			return err
 		}
 	}
-	logger.Println("Importing stack...")
-	_, upErr := stack.Up(ctx,
+	logger.Info("Importing stack...")
+	var result auto.UpResult
+	upErr := error(nil)
+	result, upErr = stack.Up(ctx,
 		optup.ContinueOnError(),
-		optup.ProgressStreams(os.Stdout),
-		optup.ErrorProgressStreams(os.Stdout),
+		optup.ProgressStreams(progressWriter),
+		optup.ErrorProgressStreams(errorWriter),
 		optup.DebugLogging(debugOptions),
 		optup.SuppressProgress(),
 	)
+	upResult = &result
 
 	if opts.ImportFilePath != "" {
 		state, exportErr := stack.Export(ctx)
 		if exportErr != nil {
-			logger.Printf("Warning: failed to export stack state: %v", exportErr)
+			logger.Warn("Failed to export stack state", "error", exportErr)
 			// If we can't export state, we'll still try to write what we captured
 			state = apitype.UntypedDeployment{}
 		}
 
 		if upErr != nil {
-			logger.Printf("Warning: pulumi up encountered errors, writing partial import file")
+			logger.Warn("pulumi up encountered errors, writing partial import file")
 		}
 
 		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil, skeleton, opts.FilterPlaceholdersOnly)
 		if finalizeErr != nil {
-			logger.Printf("Error writing import file: %v", finalizeErr)
+			logger.Error("Error writing import file", "error", finalizeErr)
 			// Return the finalize error if Up succeeded, otherwise return Up error
 			if upErr == nil {
+				status = "failed"
+				resourcesFailedToImport = 1
 				return finalizeErr
 			}
 		}
 
 		// Return the original Up error if it occurred, so the command exits with error code
 		if upErr != nil {
+			status = "failed"
+			resourcesFailedToImport = 1
 			return upErr
 		}
 	}
 
 	if upErr != nil {
+		status = "failed"
+		resourcesFailedToImport = 1
 		return upErr
+	}
+	status = "success"
+	if upResult != nil && upResult.Summary.ResourceChanges != nil {
+		resourcesImported = sumResourceChanges(*upResult.Summary.ResourceChanges)
 	}
 	return nil
 }
@@ -207,7 +254,7 @@ func prepareSelectedStack(ctx context.Context, workDir string, envVars map[strin
 	return auto.UpsertStackLocalSource(ctx, summary.Name, workDir, auto.EnvVars(envVars))
 }
 
-func prepareCaptureStack(ctx context.Context, logger *log.Logger, workDir string, envVars map[string]string, opts RunOptions) (auto.Stack, func(), error) {
+func prepareCaptureStack(ctx context.Context, logger *slog.Logger, workDir string, envVars map[string]string, opts RunOptions) (auto.Stack, func(), error) {
 	var stack auto.Stack
 	backendDir, stackName, createdTemp, err := resolveCaptureBackend(opts)
 	if err != nil {
@@ -218,7 +265,7 @@ func prepareCaptureStack(ctx context.Context, logger *log.Logger, workDir string
 	if _, ok := captureEnv["PULUMI_CONFIG_PASSPHRASE"]; !ok {
 		captureEnv["PULUMI_CONFIG_PASSPHRASE"] = capturePassphrase
 	}
-	logger.Printf("Using capture stack %q with backend %s", stackName, backendDir)
+	logger.Info("Using capture stack", "stack", stackName, "backend", backendDir)
 	stack, err = auto.UpsertStackLocalSource(ctx, stackName, workDir, auto.EnvVars(captureEnv))
 	if err != nil {
 		if createdTemp {
@@ -231,11 +278,11 @@ func prepareCaptureStack(ctx context.Context, logger *log.Logger, workDir string
 			return
 		}
 		if err := stack.Workspace().RemoveStack(ctx, stack.Name(), optremove.Force()); err != nil {
-			logger.Printf("failed to remove capture stack %s: %v", stack.Name(), err)
+			logger.Warn("Failed to remove capture stack", "stack", stack.Name(), "error", err)
 		}
 		if createdTemp {
 			if err := os.RemoveAll(backendDir); err != nil {
-				logger.Printf("failed to remove capture backend %s: %v", backendDir, err)
+				logger.Warn("Failed to remove capture backend", "backend", backendDir, "error", err)
 			}
 		}
 	}
@@ -319,7 +366,7 @@ func cloneEnv(env map[string]string) map[string]string {
 	return dup
 }
 
-func runPreviewForImportFile(ctx context.Context, logger *log.Logger, stack auto.Stack, path string, debugOptions debug.LoggingOptions) (*imports.File, error) {
+func runPreviewForImportFile(ctx context.Context, logger *slog.Logger, stack auto.Stack, path string, debugOptions debug.LoggingOptions) (*imports.File, error) {
 	if path == "" {
 		return nil, fmt.Errorf("import file path is required for preview")
 	}
@@ -327,13 +374,20 @@ func runPreviewForImportFile(ctx context.Context, logger *log.Logger, stack auto
 		return nil, fmt.Errorf("ensuring import file directory: %w", err)
 	}
 
-	logger.Printf("Running pulumi preview to generate import skeleton at %s", path)
+	progressWriter := io.Discard
+	errorWriter := io.Discard
+	if debugOptions.Debug {
+		progressWriter = os.Stdout
+		errorWriter = os.Stdout
+	}
+
+	logger.Info("Running pulumi preview to generate import skeleton", "path", path)
 	_, err := stack.Preview(
 		ctx,
 		optpreview.ImportFile(path),
 		optpreview.DebugLogging(debugOptions),
-		optpreview.ProgressStreams(os.Stdout),
-		optpreview.ErrorProgressStreams(os.Stdout),
+		optpreview.ProgressStreams(progressWriter),
+		optpreview.ErrorProgressStreams(errorWriter),
 		optpreview.SuppressProgress(),
 	)
 	if err != nil {
@@ -347,15 +401,15 @@ func runPreviewForImportFile(ctx context.Context, logger *log.Logger, stack auto
 	return file, nil
 }
 
-func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, skeleton *imports.File, placeholdersOnly bool) error {
+func finalizeCapture(logger *slog.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, skeleton *imports.File, placeholdersOnly bool) error {
 	if len(deployment.Deployment) == 0 {
-		logger.Println("Exported stack deployment is empty; capture file will only include intercepted resources")
+		logger.Info("Exported stack deployment is empty; capture file will only include intercepted resources")
 	} else {
-		logger.Printf("Exported stack deployment contains %d bytes of state", len(deployment.Deployment))
+		logger.Info("Exported stack deployment contains state", "bytes", len(deployment.Deployment))
 	}
 
 	if isPartial {
-		logger.Println("Writing partial import file due to errors during execution")
+		logger.Info("Writing partial import file due to errors during execution")
 	}
 	summary := CaptureSummary{}
 	entries := make([]Capture, 0)
@@ -364,7 +418,7 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 		entries = collector.Results()
 	}
 	if skeleton != nil {
-		logger.Printf("Merging preview import skeleton with %d captured resources", len(entries))
+		logger.Info("Merging preview import skeleton with captured resources", "count", len(entries))
 	}
 	captures := make([]imports.CaptureMetadata, 0, len(entries))
 	for _, entry := range entries {
@@ -389,9 +443,9 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 		filtered := len(file.Resources)
 		switch {
 		case filtered == 0:
-			logger.Println("No placeholder resources found; import file will be empty")
+			logger.Info("No placeholder resources found; import file will be empty")
 		case filtered != originalCount:
-			logger.Printf("Filtered import file down to %d placeholder resources (from %d total)", filtered, originalCount)
+			logger.Info("Filtered import file down to placeholder resources", "filtered", filtered, "original", originalCount)
 		}
 	}
 	if err := imports.WriteFile(path, file); err != nil {
@@ -401,40 +455,50 @@ func finalizeCapture(logger *log.Logger, collector *CaptureCollector, path strin
 	if isPartial {
 		resultType = "partial"
 	}
-	logger.Printf(
-		"Capture mode wrote %d resources to %s (intercepted %d create calls) [%s]",
-		len(file.Resources),
-		path,
-		summary.TotalIntercepts,
-		resultType,
+	logger.Info("Capture mode wrote resources",
+		"resources", len(file.Resources),
+		"path", path,
+		"intercepts", summary.TotalIntercepts,
+		"result", resultType,
 	)
 	if deduped := summary.TotalIntercepts - summary.UniqueResources; deduped > 0 {
-		logger.Printf("Deduped %d duplicate captures", deduped)
+		logger.Debug("Deduped duplicate captures", "count", deduped)
 	}
 	if len(summary.Skipped) > 0 {
-		logger.Printf("Skipped %d resources during capture:", len(summary.Skipped))
+		logger.Info("Skipped resources during capture", "count", len(summary.Skipped))
 		for _, skipped := range summary.Skipped {
-			logger.Printf("  - %s (%s): %s", skipped.LogicalName, skipped.Type, skipped.Reason)
+			logger.Info("Skipped resource", "logicalName", skipped.LogicalName, "type", skipped.Type, "reason", skipped.Reason)
 		}
 	}
 	return nil
 }
 
+func sumResourceChanges(changes map[string]int) int {
+	total := 0
+	for _, v := range changes {
+		if v > 0 {
+			total += v
+		}
+	}
+	return total
+}
+
 func startProxiedProviders(
 	ctx context.Context,
-	logger *log.Logger,
+	logger *slog.Logger,
 	lookups *lookups.Lookups,
 	pt providers.PulumiTest,
 	opts RunOptions,
 	collector *CaptureCollector,
 ) (map[string]string, func(), error) {
+	providerLogger := logger.With("component", "providers")
 	providerCtx, providerCancel := context.WithCancel(ctx)
 	processes := &providerProcessSet{}
 
 	ccapiBinary := newProviderFactory(awsCCApi, awsCCApiVersion, processes)
-	ccapiIntercept := providers.ProviderInterceptFactory(providerCtx, ccapiBinary, awsCCApiInterceptors(lookups, opts, collector))
+	ccapiIntercept := providers.ProviderInterceptFactory(providerCtx, ccapiBinary, awsCCApiInterceptors(lookups, opts, collector, providerLogger))
 	awsBinary := newProviderFactory(aws, awsVersion, processes)
-	awsIntercept := providers.ProviderInterceptFactory(providerCtx, awsBinary, awsInterceptors(lookups, opts, collector))
+	awsIntercept := providers.ProviderInterceptFactory(providerCtx, awsBinary, awsInterceptors(lookups, opts, collector, providerLogger))
 	dockerBinary := newProviderFactory(docker, dockerVersion, processes)
 	dockerIntercept := providers.ProviderInterceptFactory(providerCtx, dockerBinary, dockerInterceptors())
 
@@ -442,7 +506,7 @@ func startProxiedProviders(
 		providerCancel()
 		waitCtx, waitCancel := context.WithTimeout(context.Background(), providerWaitTimeout)
 		defer waitCancel()
-		processes.wait(waitCtx, logger)
+		processes.wait(waitCtx, providerLogger)
 	}
 
 	ps, err := providers.StartProviders(providerCtx, map[providers.ProviderName]providers.ProviderFactory{
@@ -466,15 +530,26 @@ func dockerInterceptors() providers.ProviderInterceptors {
 	}
 }
 
-func awsInterceptors(lookups *lookups.Lookups, opts RunOptions, collector *CaptureCollector) providers.ProviderInterceptors {
-	i := &awsInterceptor{Lookups: lookups, mode: opts.Mode, collector: collector, skipCreate: opts.SkipCreate}
+func awsInterceptors(lookups *lookups.Lookups, opts RunOptions, collector *CaptureCollector, logger *slog.Logger) providers.ProviderInterceptors {
+	i := &awsInterceptor{
+		Lookups:    lookups,
+		mode:       opts.Mode,
+		collector:  collector,
+		skipCreate: opts.SkipCreate,
+		logger:     logger.With("provider", "aws"),
+	}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}
 }
 
-func awsCCApiInterceptors(lookups *lookups.Lookups, opts RunOptions, collector *CaptureCollector) providers.ProviderInterceptors {
-	i := &awsCCApiInterceptor{Lookups: lookups, mode: opts.Mode, collector: collector}
+func awsCCApiInterceptors(lookups *lookups.Lookups, opts RunOptions, collector *CaptureCollector, logger *slog.Logger) providers.ProviderInterceptors {
+	i := &awsCCApiInterceptor{
+		Lookups:   lookups,
+		mode:      opts.Mode,
+		collector: collector,
+		logger:    logger.With("provider", "aws-native"),
+	}
 	return providers.ProviderInterceptors{
 		Create: i.create,
 	}
