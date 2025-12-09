@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +39,7 @@ func (p *providerProcessSet) add(proc providerProcess) {
 	p.processes = append(p.processes, proc)
 }
 
-func (p *providerProcessSet) wait(ctx context.Context, logger *log.Logger) {
+func (p *providerProcessSet) wait(ctx context.Context, logger *slog.Logger) {
 	p.mu.Lock()
 	processes := make([]providerProcess, len(p.processes))
 	copy(processes, p.processes)
@@ -55,11 +55,11 @@ func (p *providerProcessSet) wait(ctx context.Context, logger *log.Logger) {
 		select {
 		case <-done:
 		case <-ctx.Done():
-			logger.Printf("provider %s did not exit before context deadline", proc.name)
+			logger.Warn("Provider did not exit before context deadline", "provider", proc.name)
 			select {
 			case <-done:
 			case <-time.After(200 * time.Millisecond):
-				logger.Printf("provider %s still running after context deadline", proc.name)
+				logger.Warn("Provider still running after context deadline", "provider", proc.name)
 			}
 		}
 	}
