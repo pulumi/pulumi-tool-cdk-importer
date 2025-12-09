@@ -46,6 +46,7 @@ func newProgramImportCommand() *cobra.Command {
 				keepImportState:  false,
 				localStackFile:   "",
 				usePreviewImport: false,
+				debugLogging:     debugLogging,
 				verbose:          verbose,
 			}
 			return run(cfg)
@@ -93,6 +94,7 @@ func newProgramIterateCommand() *cobra.Command {
 				keepImportState:  true,
 				localStackFile:   resolvePath(invocationDir, defaultLocalStackFile),
 				usePreviewImport: true,
+				debugLogging:     debugLogging,
 				verbose:          verbose,
 			}
 			return run(cfg)

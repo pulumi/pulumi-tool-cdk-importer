@@ -29,6 +29,7 @@ type runConfig struct {
 	workDir          string
 	invocationDir    string
 	usePreviewImport bool
+	debugLogging     bool
 	verbose          int
 	stdout           io.Writer
 }
@@ -43,7 +44,7 @@ func run(cfg runConfig) error {
 		w = os.Stdout
 	}
 	// The writer for the logger could be passed in `cfg` for better testability/flexibility.
-	logger := logging.New(w, cfg.verbose, "component", "cdk-importer")
+	logger := logging.New(w, cfg.debugLogging, "component", "cdk-importer")
 	ctx := context.Background()
 
 	if err := os.Chdir(cfg.workDir); err != nil {

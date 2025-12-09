@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,12 +14,12 @@ import (
 
 // New returns a slog.Logger with a friendly, single-line format.
 // Verbosity > 0 enables debug-level logs; otherwise only info-level logs emit.
-func New(w io.Writer, verbose int, attrs ...any) *slog.Logger {
+func New(w io.Writer, debug bool, attrs ...any) *slog.Logger {
 	if w == nil {
 		w = os.Stdout
 	}
 	level := slog.LevelInfo
-	if verbose > 0 {
+	if debug {
 		level = slog.LevelDebug
 	}
 	handler := &friendlyHandler{
@@ -69,13 +70,56 @@ func (h *friendlyHandler) Handle(_ context.Context, r slog.Record) error {
 			if idx > 0 {
 				b.WriteString(" ")
 			}
-			fmt.Fprintf(&b, "%s=%q", a.Key, a.Value.Any())
+			fmt.Fprintf(&b, "%s=%s", a.Key, formatValue(a.Value))
 		}
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	_, err := io.WriteString(h.w, b.String()+"\n")
 	return err
+}
+
+func formatValue(v slog.Value) string {
+	v = v.Resolve()
+	switch v.Kind() {
+	case slog.KindString:
+		return strconv.Quote(v.String())
+	case slog.KindInt64:
+		return strconv.FormatInt(v.Int64(), 10)
+	case slog.KindUint64:
+		return strconv.FormatUint(v.Uint64(), 10)
+	case slog.KindFloat64:
+		return strconv.FormatFloat(v.Float64(), 'g', -1, 64)
+	case slog.KindBool:
+		return strconv.FormatBool(v.Bool())
+	case slog.KindDuration:
+		return v.Duration().String()
+	case slog.KindTime:
+		return v.Time().Format(time.RFC3339Nano)
+	case slog.KindAny:
+		return formatAny(v.Any())
+	case slog.KindGroup:
+		return fmt.Sprint(v.Group())
+	default:
+		return fmt.Sprint(v.Any())
+	}
+}
+
+func formatAny(val any) string {
+	switch v := val.(type) {
+	case string:
+		return strconv.Quote(v)
+	case fmt.Stringer:
+		return strconv.Quote(v.String())
+	case error:
+		return strconv.Quote(v.Error())
+	case time.Time:
+		return v.Format(time.RFC3339Nano)
+	case time.Duration:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 func (h *friendlyHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

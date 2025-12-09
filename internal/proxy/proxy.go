@@ -173,14 +173,11 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 	if opts.Verbose > 0 {
 		level := uint(opts.Verbose)
 		debugOptions.LogLevel = &level
-		// Only let plugin/engine logs through when verbosity is high enough.
-		if opts.Verbose >= 6 {
-			debugOptions.FlowToPlugins = true
-			debugOptions.LogToStdErr = true
-			debugOptions.Debug = true
-			progressWriter = os.Stdout
-			errorWriter = os.Stdout
-		}
+		debugOptions.FlowToPlugins = true
+		debugOptions.LogToStdErr = true
+		debugOptions.Debug = true
+		progressWriter = os.Stdout
+		errorWriter = os.Stdout
 	}
 	var skeleton *imports.File
 	if opts.ImportFilePath != "" && opts.UsePreviewImport {

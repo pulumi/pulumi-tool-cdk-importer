@@ -32,6 +32,7 @@ func newRuntimeCommand() *cobra.Command {
 				keepImportState:  false,
 				localStackFile:   "",
 				usePreviewImport: false,
+				debugLogging:     debugLogging,
 				verbose:          verbose,
 			}
 			return run(cfg)
