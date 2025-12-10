@@ -27,3 +27,16 @@ func TestFriendlyHandlerFormatsNumericAttrs(t *testing.T) {
 		t.Fatalf("status should remain quoted: %s", line)
 	}
 }
+
+func TestFriendlyHandlerKeepsMultilineStrings(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := New(&buf, false, "component", "cdk-importer")
+	logger.Info("Pulumi errors", "details", "Diagnostics:\n  resource: failed\n  another: failed")
+
+	output := buf.String()
+	if !strings.Contains(output, "Diagnostics:\n  resource: failed\n  another: failed") {
+		t.Fatalf("multiline details should not be escaped: %s", output)
+	}
+}

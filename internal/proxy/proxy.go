@@ -16,12 +16,14 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pulumi/providertest/providers"
@@ -30,6 +32,7 @@ import (
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/lookups"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optremove"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
@@ -128,7 +131,6 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 	status := "unknown"
 	resourcesImported := 0
 	resourcesFailedToImport := 0
-	var upResult *auto.UpResult
 	primaryStack := ""
 	if len(opts.StackNames) > 0 {
 		primaryStack = opts.StackNames[0]
@@ -167,6 +169,14 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 	if cleanup != nil {
 		defer cleanup()
 	}
+	if err := stack.SetConfigWithOptions(ctx, "aws-native:autoNaming.autoTrim", auto.ConfigValue{Value: "true"}, &auto.ConfigOptions{
+		Path: true,
+	}); err != nil {
+		status = "failed"
+		resourcesFailedToImport = 1
+		return fmt.Errorf("failed to set aws-native:autoNaming.autoTrim config: %w", err)
+	}
+
 	progressWriter := io.Discard
 	errorWriter := io.Discard
 	debugOptions := debug.LoggingOptions{}
@@ -186,17 +196,41 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 			return err
 		}
 	}
+
+	eventCh := make(chan events.EngineEvent)
+	eventTracker := newUpEventTracker()
+	var eventWG sync.WaitGroup
+	eventWG.Add(1)
+	operationFailedErr := errors.New("operation failed")
+	logUpErrors := func() {
+		if summary := eventTracker.failureSummary(); summary != "" {
+			logger.Info("Pulumi errors", "details", summary)
+		}
+	}
+	go func() {
+		defer eventWG.Done()
+		eventTracker.consume(eventCh)
+	}()
+
 	logger.Info("Importing stack...")
-	var result auto.UpResult
 	upErr := error(nil)
-	result, upErr = stack.Up(ctx,
+	_, upErr = stack.Up(ctx,
 		optup.ContinueOnError(),
 		optup.ProgressStreams(progressWriter),
 		optup.ErrorProgressStreams(errorWriter),
 		optup.DebugLogging(debugOptions),
+		optup.EventStreams(eventCh),
 		optup.SuppressProgress(),
 	)
-	upResult = &result
+	eventWG.Wait()
+	resourcesImported = eventTracker.created()
+	resourcesFailedToImport = eventTracker.failedCreates()
+
+	ensureFailureCount := func() {
+		if upErr != nil && resourcesImported == 0 && resourcesFailedToImport == 0 {
+			resourcesFailedToImport = 1
+		}
+	}
 
 	if opts.ImportFilePath != "" {
 		state, exportErr := stack.Export(ctx)
@@ -216,7 +250,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 			// Return the finalize error if Up succeeded, otherwise return Up error
 			if upErr == nil {
 				status = "failed"
-				resourcesFailedToImport = 1
+				ensureFailureCount()
 				return finalizeErr
 			}
 		}
@@ -224,20 +258,19 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 		// Return the original Up error if it occurred, so the command exits with error code
 		if upErr != nil {
 			status = "failed"
-			resourcesFailedToImport = 1
-			return upErr
+			ensureFailureCount()
+			logUpErrors()
+			return operationFailedErr
 		}
 	}
 
 	if upErr != nil {
+		logUpErrors()
 		status = "failed"
-		resourcesFailedToImport = 1
-		return upErr
+		ensureFailureCount()
+		return operationFailedErr
 	}
 	status = "success"
-	if upResult != nil && upResult.Summary.ResourceChanges != nil {
-		resourcesImported = sumResourceChanges(*upResult.Summary.ResourceChanges)
-	}
 	return nil
 }
 
@@ -491,7 +524,7 @@ func startProxiedProviders(
 	opts RunOptions,
 	collector *CaptureCollector,
 ) (map[string]string, func(), error) {
-	providerLogger := logger.With("component", "providers")
+	providerLogger := logger.With("subcomponent", "providers")
 	providerCtx, providerCancel := context.WithCancel(ctx)
 	processes := &providerProcessSet{}
 

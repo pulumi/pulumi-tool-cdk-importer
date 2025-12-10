@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pulumi/pulumi-tool-cdk-importer/internal/imports"
+	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -171,6 +172,71 @@ func TestFinalizeCaptureFiltersPlaceholders(t *testing.T) {
 		assert.Equal(t, "<PLACEHOLDER>", file.Resources[0].ID)
 		assert.Equal(t, "missingId", file.Resources[0].Name)
 	}
+}
+
+func TestUpEventTrackerCountsCreatesAndFailures(t *testing.T) {
+	t.Parallel()
+
+	tracker := newUpEventTracker()
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		ResourcePreEvent: &apitype.ResourcePreEvent{
+			Metadata: apitype.StepEventMetadata{URN: "urn:pulumi:stack::project::pkg:mod:Type::name", Op: apitype.OpCreate},
+		},
+	}})
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		DiagnosticEvent: &apitype.DiagnosticEvent{URN: "urn:pulumi:stack::project::pkg:mod:Type::name", Severity: "error", Message: "boom"},
+	}})
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		ResOpFailedEvent: &apitype.ResOpFailedEvent{
+			Metadata: apitype.StepEventMetadata{URN: "urn:pulumi:stack::project::pkg:mod:Type::name", Op: apitype.OpCreate},
+		},
+	}})
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		ResourcePreEvent: &apitype.ResourcePreEvent{
+			Metadata: apitype.StepEventMetadata{URN: "urn:pulumi:stack::project::pkg:mod:Type::other", Op: apitype.OpCreate},
+		},
+	}})
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		ResOutputsEvent: &apitype.ResOutputsEvent{
+			Metadata: apitype.StepEventMetadata{URN: "urn:pulumi:stack::project::pkg:mod:Type::other", Op: apitype.OpCreate},
+		},
+	}})
+
+	assert.Equal(t, 2, tracker.totalResources(), "should track registered resources")
+	assert.Equal(t, 1, tracker.created(), "should count successful creates")
+	assert.Equal(t, 1, tracker.failedCreates(), "should count failed creates")
+	assert.Equal(t, "urn:pulumi:stack::project::pkg:mod:Type::name: boom", tracker.failureSummary())
+}
+
+func TestUpEventTrackerUsesGeneralDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	tracker := newUpEventTracker()
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		DiagnosticEvent: &apitype.DiagnosticEvent{Severity: "error", Message: "stack failed"},
+	}})
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		ResOpFailedEvent: &apitype.ResOpFailedEvent{
+			Metadata: apitype.StepEventMetadata{URN: "urn:pulumi:stack::project::pkg:mod:Type::name", Op: apitype.OpCreate},
+		},
+	}})
+
+	assert.Equal(t, 1, tracker.failedCreates(), "should count failure even without URN-specific diagnostic")
+	assert.Equal(t, "stack failed", tracker.failureSummary(), "should fall back to general diagnostics")
+}
+
+func TestUpEventTrackerSummarizesDiagnosticsWithoutFailures(t *testing.T) {
+	t.Parallel()
+
+	tracker := newUpEventTracker()
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		DiagnosticEvent: &apitype.DiagnosticEvent{URN: "urn:pulumi:stack::project::pkg:mod:Type::name", Severity: "error", Message: "boom"},
+	}})
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		DiagnosticEvent: &apitype.DiagnosticEvent{Severity: "error", Message: "stack failed before starting"},
+	}})
+
+	assert.Equal(t, "urn:pulumi:stack::project::pkg:mod:Type::name: boom\n\nstack failed before starting", tracker.failureSummary())
 }
 
 type testWriter struct {
