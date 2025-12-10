@@ -43,14 +43,14 @@ func (i *awsCCApiInterceptor) create(
 	resourceToken := string(urn.Type())
 
 	if resourceToken == "aws-native:cloudformation:CustomResourceEmulator" {
-		if i.mode == CaptureImports && i.collector != nil {
+		if i.collector != nil {
 			i.collector.Skip(SkippedCapture{
 				Type:        resourceToken,
 				LogicalName: string(urn.Name()),
 				Reason:      "resource type not supported for capture",
 			})
 		}
-		return nil, errors.New("CustomResourceEmulator is not supported")
+		return nil, errors.New("CustomResourceEmulator is not supported for import")
 	}
 
 	inputs, err := plugin.UnmarshalProperties(in.GetProperties(), plugin.MarshalOptions{

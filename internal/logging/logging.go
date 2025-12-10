@@ -83,7 +83,11 @@ func formatValue(v slog.Value) string {
 	v = v.Resolve()
 	switch v.Kind() {
 	case slog.KindString:
-		return strconv.Quote(v.String())
+		s := v.String()
+		if strings.ContainsRune(s, '\n') {
+			return s
+		}
+		return strconv.Quote(s)
 	case slog.KindInt64:
 		return strconv.FormatInt(v.Int64(), 10)
 	case slog.KindUint64:
