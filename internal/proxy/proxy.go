@@ -131,7 +131,6 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 	status := "unknown"
 	resourcesImported := 0
 	resourcesFailedToImport := 0
-	var upResult *auto.UpResult
 	primaryStack := ""
 	if len(opts.StackNames) > 0 {
 		primaryStack = opts.StackNames[0]
@@ -214,9 +213,8 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 	}()
 
 	logger.Info("Importing stack...")
-	var result auto.UpResult
 	upErr := error(nil)
-	result, upErr = stack.Up(ctx,
+	_, upErr = stack.Up(ctx,
 		optup.ContinueOnError(),
 		optup.ProgressStreams(progressWriter),
 		optup.ErrorProgressStreams(errorWriter),
@@ -227,10 +225,9 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 	eventWG.Wait()
 	resourcesImported = eventTracker.created()
 	resourcesFailedToImport = eventTracker.failedCreates()
-	upResult = &result
 
 	ensureFailureCount := func() {
-		if resourcesImported == 0 && resourcesFailedToImport == 0 {
+		if upErr != nil && resourcesImported == 0 && resourcesFailedToImport == 0 {
 			resourcesFailedToImport = 1
 		}
 	}
@@ -274,9 +271,6 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 		return operationFailedErr
 	}
 	status = "success"
-	if upResult != nil && upResult.Summary.ResourceChanges != nil {
-		resourcesImported = sumResourceChanges(*upResult.Summary.ResourceChanges)
-	}
 	return nil
 }
 
