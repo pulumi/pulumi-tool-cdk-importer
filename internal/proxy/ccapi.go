@@ -50,7 +50,7 @@ func (i *awsCCApiInterceptor) create(
 				Reason:      "resource type not supported for capture",
 			})
 		}
-		return nil, errors.New("CustomResourceEmulator is not supported for import")
+		return nil, errors.New("Custom Resources cannot be imported")
 	}
 
 	inputs, err := plugin.UnmarshalProperties(in.GetProperties(), plugin.MarshalOptions{
