@@ -44,8 +44,8 @@ const (
 	aws      = "aws"
 	docker   = "docker-build"
 	// TODO: create workflow to update this
-	awsVersion          = "7.11.0"
-	awsCCApiVersion     = "1.38.0"
+	awsVersion          = "7.14.0"
+	awsCCApiVersion     = "1.40.0"
 	dockerVersion       = "0.0.7"
 	capturePassphrase   = "cdk-importer-local"
 	providerWaitTimeout = 10 * time.Second
