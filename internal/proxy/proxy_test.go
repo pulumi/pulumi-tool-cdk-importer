@@ -108,7 +108,7 @@ func TestFinalizeCaptureWithPartialResults(t *testing.T) {
 	})
 
 	// Test with empty deployment (partial result)
-	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil, false)
+	err := finalizeImportFile(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil, RunOptions{})
 	require.NoError(t, err)
 
 	// Verify file was written
@@ -117,7 +117,7 @@ func TestFinalizeCaptureWithPartialResults(t *testing.T) {
 
 	// Test with complete deployment
 	importPath2 := filepath.Join(tmpDir, "import2.json")
-	err = finalizeCapture(logger, collector, importPath2, apitype.UntypedDeployment{}, false, nil, false)
+	err = finalizeImportFile(logger, collector, importPath2, apitype.UntypedDeployment{}, false, nil, RunOptions{})
 	require.NoError(t, err)
 
 	// Verify file was written
@@ -136,14 +136,14 @@ func TestFinalizeCaptureLogsPartialStatus(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&testWriter{output: &logOutput}, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	collector := NewCaptureCollector()
-	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil, false)
+	err := finalizeImportFile(logger, collector, importPath, apitype.UntypedDeployment{}, true, nil, RunOptions{})
 	require.NoError(t, err)
 
 	// Verify partial status is logged
 	assert.Contains(t, string(logOutput), "partial", "should log partial status")
 }
 
-func TestFinalizeCaptureFiltersPlaceholders(t *testing.T) {
+func TestFinalizeCaptureFiltersFailures(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
@@ -159,17 +159,29 @@ func TestFinalizeCaptureFiltersPlaceholders(t *testing.T) {
 	collector.Append(Capture{
 		Type: "aws:s3/bucket:Bucket",
 		Name: "missingId",
-		ID:   "<PLACEHOLDER>",
+		ID:   "some-id",
 	})
 
-	err := finalizeCapture(logger, collector, importPath, apitype.UntypedDeployment{}, false, nil, true)
+	tracker := newUpEventTracker()
+	tracker.handle(events.EngineEvent{EngineEvent: apitype.EngineEvent{
+		ResOpFailedEvent: &apitype.ResOpFailedEvent{
+			Metadata: apitype.StepEventMetadata{
+				URN: "urn:pulumi:stack::project::aws:s3/bucket:Bucket::missingId",
+				Op:  apitype.OpCreate,
+			},
+		},
+	}})
+
+	err := finalizeImportFile(logger, collector, importPath, apitype.UntypedDeployment{}, false, tracker, RunOptions{
+		FilterFailuresOnly: true,
+	})
 	require.NoError(t, err)
 
 	file, err := imports.ReadFile(importPath)
 	require.NoError(t, err)
 
 	if assert.Len(t, file.Resources, 1) {
-		assert.Equal(t, "<PLACEHOLDER>", file.Resources[0].ID)
+		assert.Equal(t, "some-id", file.Resources[0].ID)
 		assert.Equal(t, "missingId", file.Resources[0].Name)
 	}
 }

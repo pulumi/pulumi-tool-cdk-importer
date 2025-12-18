@@ -2,8 +2,10 @@ package imports
 
 import "strings"
 
-// MergeWithSkeleton overlays an enriched import file onto a skeleton produced by `pulumi preview --import-file`.
-// The skeleton defines the authoritative resource set; enriched fields replace placeholders/missing data.
+// MergeWithSkeleton overlays enriched data onto a skeleton file.
+//
+// The skeleton defines the authoritative resource set and preserves any user-provided values.
+// Enriched fields only fill in missing values or replace placeholder IDs.
 func MergeWithSkeleton(skeleton, enriched *File) *File {
 	switch {
 	case skeleton == nil:
@@ -24,10 +26,13 @@ func mergeNameTables(skeleton, enriched map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(skeleton)+len(enriched))
-	for k, v := range skeleton {
+	for k, v := range enriched {
+		if v == "" {
+			continue
+		}
 		out[k] = v
 	}
-	for k, v := range enriched {
+	for k, v := range skeleton {
 		if v == "" {
 			continue
 		}
@@ -66,25 +71,30 @@ func mergeResources(skeleton, enriched []Resource) []Resource {
 func mergeResource(skeleton, enriched Resource) Resource {
 	result := skeleton
 
-	if enriched.Type != "" {
+	if result.Type == "" && enriched.Type != "" {
 		result.Type = enriched.Type
 	}
-	if enriched.Name != "" {
+	if result.Name == "" && enriched.Name != "" {
 		result.Name = enriched.Name
 	}
-	if enriched.LogicalName != "" {
+	if result.LogicalName == "" && enriched.LogicalName != "" {
 		result.LogicalName = enriched.LogicalName
 	}
 	result.ID = chooseID(result.ID, enriched.ID)
-	if len(enriched.Properties) > 0 {
+	if len(result.Properties) == 0 && len(enriched.Properties) > 0 {
 		result.Properties = cloneStrings(enriched.Properties)
 	}
-	result.Component = result.Component || enriched.Component
-	if enriched.Version != "" {
+	if !result.Component {
+		result.Component = enriched.Component
+	}
+	if result.Version == "" && enriched.Version != "" {
 		result.Version = enriched.Version
 	}
-	if enriched.Parent != "" {
+	if result.Parent == "" && enriched.Parent != "" {
 		result.Parent = enriched.Parent
+	}
+	if result.Provider == "" && enriched.Provider != "" {
+		result.Provider = enriched.Provider
 	}
 
 	return result
@@ -105,7 +115,8 @@ func chooseID(current, candidate string) string {
 	case current == "" || strings.EqualFold(current, placeholderID):
 		return candidate
 	default:
-		return candidate
+		// Preserve any explicit/non-placeholder ID from the skeleton.
+		return current
 	}
 }
 

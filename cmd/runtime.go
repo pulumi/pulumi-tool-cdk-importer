@@ -23,17 +23,16 @@ func newRuntimeCommand() *cobra.Command {
 			}
 
 			cfg := runConfig{
-				mode:             proxy.RunPulumi,
-				stacks:           stacks,
-				importFile:       resolvePath(invocationDir, importFile),
-				skipCreate:       skipCreate,
-				workDir:          invocationDir,
-				invocationDir:    invocationDir,
-				keepImportState:  false,
-				localStackFile:   "",
-				usePreviewImport: false,
-				debugLogging:     debugLogging,
-				verbose:          verbose,
+				mode:            proxy.RunPulumi,
+				stacks:          stacks,
+				importFile:      resolvePath(invocationDir, importFile),
+				skipCreate:      skipCreate,
+				workDir:         invocationDir,
+				invocationDir:   invocationDir,
+				keepImportState: false,
+				localStackFile:  "",
+				debugLogging:    debugLogging,
+				verbose:         verbose,
 			}
 			return run(cfg)
 		},

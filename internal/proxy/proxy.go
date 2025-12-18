@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +34,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/debug"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
-	"github.com/pulumi/pulumi/sdk/v3/go/auto/optpreview"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optremove"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
@@ -63,16 +63,20 @@ const (
 
 // RunOptions surfaces CLI decisions (mode, import path) into the proxy layer.
 type RunOptions struct {
-	Mode                   RunMode
-	ImportFilePath         string
-	Collector              *CaptureCollector
-	SkipCreate             bool
-	KeepImportState        bool
-	LocalStackFile         string
-	StackNames             []string
-	Verbose                int
-	UsePreviewImport       bool
-	FilterPlaceholdersOnly bool
+	Mode            RunMode
+	ImportFilePath  string
+	Collector       *CaptureCollector
+	SkipCreate      bool
+	KeepImportState bool
+	LocalStackFile  string
+	StackNames      []string
+	Verbose         int
+	// FilterFailuresOnly trims written import files down to the resources that failed during the run.
+	// This is used by `program import --import-file` to produce a "retry/repair list".
+	FilterFailuresOnly bool
+	// IncludeAllRegistered controls whether we should seed the import file with all resources observed
+	// during the run (via ResourcePreEvent), even if they never reach state (e.g., due to failures).
+	IncludeAllRegistered bool
 }
 
 type pulumiTest struct {
@@ -189,13 +193,6 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 		progressWriter = os.Stdout
 		errorWriter = os.Stdout
 	}
-	var skeleton *imports.File
-	if opts.ImportFilePath != "" && opts.UsePreviewImport {
-		skeleton, err = runPreviewForImportFile(ctx, logger, stack, opts.ImportFilePath, debugOptions)
-		if err != nil {
-			return err
-		}
-	}
 
 	eventCh := make(chan events.EngineEvent)
 	eventTracker := newUpEventTracker()
@@ -244,7 +241,7 @@ func RunPulumiUpWithProxies(ctx context.Context, logger *slog.Logger, lookups *l
 			logger.Warn("pulumi up encountered errors, writing partial import file")
 		}
 
-		finalizeErr := finalizeCapture(logger, collector, opts.ImportFilePath, state, upErr != nil, skeleton, opts.FilterPlaceholdersOnly)
+		finalizeErr := finalizeImportFile(logger, collector, opts.ImportFilePath, state, upErr != nil, eventTracker, opts)
 		if finalizeErr != nil {
 			logger.Error("Error writing import file", "error", finalizeErr)
 			// Return the finalize error if Up succeeded, otherwise return Up error
@@ -399,42 +396,7 @@ func cloneEnv(env map[string]string) map[string]string {
 	return dup
 }
 
-func runPreviewForImportFile(ctx context.Context, logger *slog.Logger, stack auto.Stack, path string, debugOptions debug.LoggingOptions) (*imports.File, error) {
-	if path == "" {
-		return nil, fmt.Errorf("import file path is required for preview")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("ensuring import file directory: %w", err)
-	}
-
-	progressWriter := io.Discard
-	errorWriter := io.Discard
-	if debugOptions.Debug {
-		progressWriter = os.Stdout
-		errorWriter = os.Stdout
-	}
-
-	logger.Info("Running pulumi preview to generate import skeleton", "path", path)
-	_, err := stack.Preview(
-		ctx,
-		optpreview.ImportFile(path),
-		optpreview.DebugLogging(debugOptions),
-		optpreview.ProgressStreams(progressWriter),
-		optpreview.ErrorProgressStreams(errorWriter),
-		optpreview.SuppressProgress(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("pulumi preview for import file: %w", err)
-	}
-
-	file, err := imports.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading previewed import file %q: %w", path, err)
-	}
-	return file, nil
-}
-
-func finalizeCapture(logger *slog.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, skeleton *imports.File, placeholdersOnly bool) error {
+func finalizeImportFile(logger *slog.Logger, collector *CaptureCollector, path string, deployment apitype.UntypedDeployment, isPartial bool, tracker *upEventTracker, opts RunOptions) error {
 	if len(deployment.Deployment) == 0 {
 		logger.Info("Exported stack deployment is empty; capture file will only include intercepted resources")
 	} else {
@@ -450,9 +412,6 @@ func finalizeCapture(logger *slog.Logger, collector *CaptureCollector, path stri
 		summary = collector.Summary()
 		entries = collector.Results()
 	}
-	if skeleton != nil {
-		logger.Info("Merging preview import skeleton with captured resources", "count", len(entries))
-	}
 	captures := make([]imports.CaptureMetadata, 0, len(entries))
 	for _, entry := range entries {
 		captures = append(captures, imports.CaptureMetadata{
@@ -467,19 +426,32 @@ func finalizeCapture(logger *slog.Logger, collector *CaptureCollector, path stri
 	if err != nil {
 		return err
 	}
+
+	skeleton, skeletonErr := loadSkeleton(path, tracker, opts)
+	if skeletonErr != nil {
+		return skeletonErr
+	}
 	if skeleton != nil {
 		file = imports.MergeWithSkeleton(skeleton, file)
 	}
-	if placeholdersOnly {
+	if opts.FilterFailuresOnly {
+		keep := tracker.failureKeySet()
 		originalCount := len(file.Resources)
-		file = imports.FilterPlaceholderResources(file)
+		file = imports.FilterResourcesByKeySet(file, keep)
 		filtered := len(file.Resources)
 		switch {
 		case filtered == 0:
-			logger.Info("No placeholder resources found; import file will be empty")
+			logger.Info("No failing resources detected; import file will be empty")
 		case filtered != originalCount:
-			logger.Info("Filtered import file down to placeholder resources", "filtered", filtered, "original", originalCount)
+			logger.Info("Filtered import file down to failing resources", "filtered", filtered, "original", originalCount)
 		}
+	}
+	// This importer currently assumes default-provider/no-parent imports, so we intentionally do not emit
+	// nameTable/provider/parent references.
+	file.NameTable = nil
+	for i := range file.Resources {
+		file.Resources[i].Provider = ""
+		file.Resources[i].Parent = ""
 	}
 	if err := imports.WriteFile(path, file); err != nil {
 		return err
@@ -504,6 +476,84 @@ func finalizeCapture(logger *slog.Logger, collector *CaptureCollector, path stri
 		}
 	}
 	return nil
+}
+
+func loadSkeleton(path string, tracker *upEventTracker, opts RunOptions) (*imports.File, error) {
+	var skeleton *imports.File
+	if path != "" {
+		if existing, err := imports.ReadFile(path); err == nil {
+			skeleton = existing
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("reading existing import file %q: %w", path, err)
+		}
+	}
+
+	var registered *imports.File
+	if tracker != nil && opts.IncludeAllRegistered {
+		registered = buildSkeletonFromRegistrations(tracker.registrations())
+	} else if tracker != nil && opts.FilterFailuresOnly {
+		// Even when only emitting failures, we need the full registered set to ensure
+		// we can emit resources that failed before entering state.
+		registered = buildSkeletonFromRegistrations(tracker.registrations())
+	}
+
+	if skeleton != nil && registered != nil {
+		return imports.MergeWithSkeleton(skeleton, registered), nil
+	}
+	if skeleton != nil {
+		return skeleton, nil
+	}
+	return registered, nil
+}
+
+func buildSkeletonFromRegistrations(regs []registeredResource) *imports.File {
+	if len(regs) == 0 {
+		return nil
+	}
+
+	resources := make([]imports.Resource, 0, len(regs))
+
+	for _, reg := range regs {
+		if reg.URN == "" || reg.Name == "" {
+			continue
+		}
+
+		if !isAWSResourceType(reg.Type) {
+			continue
+		}
+
+		component := !reg.Custom
+		id := imports.PlaceholderID()
+		if component {
+			id = ""
+		}
+
+		resources = append(resources, imports.Resource{
+			Type:      reg.Type,
+			Name:      reg.Name,
+			ID:        id,
+			Component: component,
+		})
+	}
+
+	sortImportsResources(resources)
+
+	return &imports.File{
+		Resources: resources,
+	}
+}
+
+func isAWSResourceType(typ string) bool {
+	return strings.HasPrefix(typ, "aws:") || strings.HasPrefix(typ, "aws-native:")
+}
+
+func sortImportsResources(resources []imports.Resource) {
+	sort.Slice(resources, func(i, j int) bool {
+		if resources[i].Type == resources[j].Type {
+			return resources[i].Name < resources[j].Name
+		}
+		return resources[i].Type < resources[j].Type
+	})
 }
 
 func sumResourceChanges(changes map[string]int) int {
