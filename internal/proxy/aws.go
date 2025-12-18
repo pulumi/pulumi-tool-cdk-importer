@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"log/slog"
 
@@ -20,6 +21,50 @@ type awsInterceptor struct {
 	skipCreate bool
 	collector  *CaptureCollector
 	logger     *slog.Logger
+}
+
+func readWithCandidateIDs(
+	ctx context.Context,
+	client pulumirpc.ResourceProviderClient,
+	urn resource.URN,
+	candidateIDs ...string,
+) (*pulumirpc.ReadResponse, string, error) {
+	seen := map[string]struct{}{}
+	ids := make([]string, 0, len(candidateIDs))
+	for _, id := range candidateIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, "", fmt.Errorf("no candidate IDs provided for %s", urn)
+	}
+
+	var lastErr error
+	for _, id := range ids {
+		rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
+			Id:   id,
+			Urn:  string(urn),
+			Name: string(urn.Name()),
+			Type: string(urn.Type()),
+		})
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		// Some providers return an empty ID instead of an error for "not found".
+		if rresp != nil && rresp.Id != "" {
+			return rresp, id, nil
+		}
+		lastErr = fmt.Errorf("provider returned empty id for %q", id)
+	}
+	return nil, "", fmt.Errorf("import read failed for %s after trying %v: %w", urn, ids, lastErr)
 }
 
 func (i *awsInterceptor) create(
@@ -86,17 +131,22 @@ func (i *awsInterceptor) create(
 		return nil, err
 	}
 
-	logger.Debug("Importing resource", "resourceType", resourceType, "id", string(prim), "urn", string(urn))
-	rresp, err := client.Read(ctx, &pulumirpc.ReadRequest{
-		Id:  string(prim),
-		Urn: string(urn),
-	})
+	primaryID := string(prim)
+	physicalID := ""
+	if r, ok := i.CfnStackResources[logical]; ok {
+		physicalID = string(r.PhysicalID)
+	}
+
+	rresp, usedID, err := readWithCandidateIDs(ctx, client, urn,
+		primaryID,
+		strings.ToLower(primaryID),
+		physicalID,
+		strings.ToLower(physicalID),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("Import failed: %w", err)
+		return nil, fmt.Errorf("Import failed for %s (primaryID=%q physicalID=%q): %w", string(urn), primaryID, physicalID, err)
 	}
-	if rresp.Id == "" {
-		return nil, fmt.Errorf("Don't have an ID!: %s %s %s", resourceType, string(prim), string(urn))
-	}
+	logger.Debug("Imported resource", "resourceType", resourceType, "id", rresp.Id, "importId", usedID, "urn", string(urn))
 
 	if i.mode == CaptureImports && i.collector != nil {
 		properties := collectPropertyKeys(inputs)

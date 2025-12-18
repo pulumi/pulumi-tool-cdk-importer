@@ -136,6 +136,31 @@ func TestFindAwsPrimaryResourceID(t *testing.T) {
 		assert.Equal(t, common.PrimaryResourceID(queueURL), actual)
 	})
 
+	t.Run("single-part identifier prefers physical ID when case-normalized by CloudFormation", func(t *testing.T) {
+		ctx := context.Background()
+		resourceToken := tokens.Type("aws:rds/proxyDefaultTargetGroup:ProxyDefaultTargetGroup")
+		logicalID := common.LogicalResourceID("ProxyDefaultTargetGroup")
+		props := map[string]interface{}{
+			"dbProxyName": "Neo-Example-Proxy",
+		}
+
+		awsLookups := &awsLookups{
+			region:  "us-west-2",
+			account: "123456789012",
+			cfnStackResources: map[common.LogicalResourceID]CfnStackResource{
+				logicalID: {
+					ResourceType: "AWS::RDS::DBProxyTargetGroup",
+					PhysicalID:   "neo-example-proxy",
+					LogicalID:    logicalID,
+				},
+			},
+		}
+
+		actual, err := awsLookups.FindPrimaryResourceID(ctx, resourceToken, logicalID, props)
+		assert.NoError(t, err)
+		assert.Equal(t, common.PrimaryResourceID("neo-example-proxy"), actual)
+	})
+
 	t.Run("composite identifier falls back to physical id", func(t *testing.T) {
 		parts, err := buildIdentifierParts(
 			[]resource.PropertyKey{resource.PropertyKey("bucket"), resource.PropertyKey("suffix")},

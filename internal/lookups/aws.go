@@ -117,6 +117,14 @@ func (a *awsLookups) findOwnAwsId(
 	// Prefer the explicit property value when provided (common for queueUrl-style identifiers).
 	if val, ok := props[string(primaryID)]; ok {
 		if s, ok := val.(string); ok && s != "" {
+			// Some CloudFormation resources accept a mixed-case name and normalize it (e.g., lowercasing) to satisfy
+			// downstream service constraints. In those cases, the stack PhysicalID is the canonical identifier for import.
+			if r, ok := a.cfnStackResources[logicalID]; ok && r.PhysicalID != "" {
+				physical := string(r.PhysicalID)
+				if physical != "" && physical != s && strings.EqualFold(physical, s) {
+					return common.PrimaryResourceID(physical), nil
+				}
+			}
 			return common.PrimaryResourceID(s), nil
 		}
 		return "", fmt.Errorf("expected id property %q to be a string; got %v", primaryID, val)
