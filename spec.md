@@ -11,8 +11,7 @@ rich Pulumi import files without mutating user stacks.
 2. When `-import-file` is passed, run against a local file backend and emit an
    import file whose entries contain the newer metadata fields (`NameTable`,
    `Parent`, `Properties`, etc.). After the run, delete the temporary backend
-   unless instructed otherwise. We now seed the import file with
-   `pulumi preview --import-file` before enrichment.
+   unless instructed otherwise.
 3. Keep the existing capture collector so we can continue enriching import file
    entries with metadata that is not present in Pulumi state. Prioritize state
    data for wiring (names, parents, providers) and capture data for custom
@@ -70,6 +69,9 @@ rich Pulumi import files without mutating user stacks.
   - [x] Skip non-AWS resources or Pulumi bookkeeping entries.
 - [x] Continue calling `imports.WriteFile` to persist the enriched JSON to the
       user-supplied path.
+      Note: We no longer rely on `pulumi preview --import-file` for seeding; the
+      resource set is seeded from Pulumi engine registration events and/or an
+      existing import file on disk.
 
 ### Testing & Docs
 

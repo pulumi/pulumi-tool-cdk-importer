@@ -37,17 +37,16 @@ func newProgramImportCommand() *cobra.Command {
 			}
 			workDir := resolvePath(invocationDir, programDir)
 			cfg := runConfig{
-				mode:             proxy.RunPulumi,
-				stacks:           stacks,
-				importFile:       resolvePath(invocationDir, importFile),
-				skipCreate:       true,
-				workDir:          workDir,
-				invocationDir:    invocationDir,
-				keepImportState:  false,
-				localStackFile:   "",
-				usePreviewImport: false,
-				debugLogging:     debugLogging,
-				verbose:          verbose,
+				mode:            proxy.RunPulumi,
+				stacks:          stacks,
+				importFile:      resolvePath(invocationDir, importFile),
+				skipCreate:      true,
+				workDir:         workDir,
+				invocationDir:   invocationDir,
+				keepImportState: false,
+				localStackFile:  "",
+				debugLogging:    debugLogging,
+				verbose:         verbose,
 			}
 			return run(cfg)
 		},
@@ -85,17 +84,16 @@ func newProgramIterateCommand() *cobra.Command {
 				resolvedImport = defaultImportFileName
 			}
 			cfg := runConfig{
-				mode:             proxy.CaptureImports,
-				stacks:           stacks,
-				importFile:       resolvePath(invocationDir, resolvedImport),
-				skipCreate:       true,
-				workDir:          workDir,
-				invocationDir:    invocationDir,
-				keepImportState:  true,
-				localStackFile:   resolvePath(invocationDir, defaultLocalStackFile),
-				usePreviewImport: true,
-				debugLogging:     debugLogging,
-				verbose:          verbose,
+				mode:            proxy.CaptureImports,
+				stacks:          stacks,
+				importFile:      resolvePath(invocationDir, resolvedImport),
+				skipCreate:      true,
+				workDir:         workDir,
+				invocationDir:   invocationDir,
+				keepImportState: true,
+				localStackFile:  resolvePath(invocationDir, defaultLocalStackFile),
+				debugLogging:    debugLogging,
+				verbose:         verbose,
 			}
 			return run(cfg)
 		},

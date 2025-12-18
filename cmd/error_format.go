@@ -4,7 +4,7 @@ import "strings"
 
 // formatCLIError removes noisy stdout/stderr dumps that Automation API attaches to errors.
 // Up errors are already collapsed to a generic message, but other Automation API
-// calls (e.g., preview/import skeleton generation) can still embed stdout/stderr.
+// calls can still embed stdout/stderr.
 func formatCLIError(err error) string {
 	if err == nil {
 		return ""

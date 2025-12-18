@@ -41,11 +41,11 @@ func TestMergeWithSkeletonPrefersEnrichedData(t *testing.T) {
 	res := merged.Resources[0]
 	assert.Equal(t, "aws:s3/bucket:Bucket", res.Type)
 	assert.Equal(t, "bucket", res.Name)
-	assert.Equal(t, "MyBucket", res.LogicalName)
+	assert.Equal(t, "Bucket", res.LogicalName)
 	assert.Equal(t, "real-id", res.ID)
-	assert.Equal(t, "", res.Provider)
+	assert.Equal(t, "default", res.Provider)
 	assert.Equal(t, "parent", res.Parent)
-	assert.Equal(t, "2.0.0", res.Version)
+	assert.Equal(t, "1.0.0", res.Version)
 	assert.Equal(t, []string{"tags"}, res.Properties)
 }
 

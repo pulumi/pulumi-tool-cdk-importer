@@ -20,18 +20,17 @@ const (
 )
 
 type runConfig struct {
-	mode             proxy.RunMode
-	stacks           []string
-	importFile       string
-	skipCreate       bool
-	keepImportState  bool
-	localStackFile   string
-	workDir          string
-	invocationDir    string
-	usePreviewImport bool
-	debugLogging     bool
-	verbose          int
-	stdout           io.Writer
+	mode            proxy.RunMode
+	stacks          []string
+	importFile      string
+	skipCreate      bool
+	keepImportState bool
+	localStackFile  string
+	workDir         string
+	invocationDir   string
+	debugLogging    bool
+	verbose         int
+	stdout          io.Writer
 }
 
 func run(cfg runConfig) error {
@@ -86,15 +85,15 @@ func run(cfg runConfig) error {
 	}
 
 	options := proxy.RunOptions{
-		Mode:                   mode,
-		ImportFilePath:         importPath,
-		SkipCreate:             skipCreateMode,
-		KeepImportState:        keepState,
-		LocalStackFile:         localStack,
-		StackNames:             cfg.stacks,
-		Verbose:                cfg.verbose,
-		UsePreviewImport:       cfg.usePreviewImport || importPath != "",
-		FilterPlaceholdersOnly: mode == proxy.RunPulumi && importPath != "",
+		Mode:                 mode,
+		ImportFilePath:       importPath,
+		SkipCreate:           skipCreateMode,
+		KeepImportState:      keepState,
+		LocalStackFile:       localStack,
+		StackNames:           cfg.stacks,
+		Verbose:              cfg.verbose,
+		FilterFailuresOnly:   mode == proxy.RunPulumi && importPath != "",
+		IncludeAllRegistered: mode == proxy.CaptureImports,
 	}
 
 	return proxy.RunPulumiUpWithProxies(ctx, logger, cc, ".", options)

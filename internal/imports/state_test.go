@@ -53,10 +53,7 @@ func TestBuildFileFromDeploymentMergesStateAndCapture(t *testing.T) {
 
 	file, err := BuildFileFromDeployment(apitype.UntypedDeployment{Deployment: bytes}, captures)
 	require.NoError(t, err)
-	require.NotNil(t, file.NameTable)
-	assert.Equal(t, string(bucketURN), file.NameTable["bucket"])
-	assert.Equal(t, string(componentURN), file.NameTable["component"])
-	assert.Equal(t, string(providerURN), file.NameTable["default"])
+	assert.Nil(t, file.NameTable)
 	require.Len(t, file.Resources, 1)
 	res := file.Resources[0]
 	assert.Equal(t, "aws:s3/bucket:Bucket", res.Type)
@@ -65,7 +62,7 @@ func TestBuildFileFromDeploymentMergesStateAndCapture(t *testing.T) {
 	assert.Equal(t, "MyBucket", res.LogicalName)
 	assert.Equal(t, []string{"tags"}, res.Properties)
 	assert.False(t, res.Component)
-	assert.Equal(t, "component", res.Parent)
+	assert.Equal(t, "", res.Parent)
 	assert.Equal(t, "", res.Provider)
 	assert.Equal(t, "7.11.0", res.Version)
 }

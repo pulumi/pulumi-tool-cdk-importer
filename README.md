@@ -43,33 +43,32 @@ pulumi plugin run cdk-importer -- program iterate \
 
 - Command: `runtime`
 - Flags: `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `--skip-create` (optional), `-v/--verbose`, `--debug` (importer debug logs only)
-- Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, runs `pulumi preview --import-file` to seed the skeleton, then imports into the selected stack and writes an import file containing only placeholder entries for resources that still need manual IDs.
+- Behavior: Uses the selected Pulumi stack and current working directory. With `--import-file`, the tool never runs `pulumi preview`; it reuses the file if it already exists, otherwise it seeds an import file skeleton from engine resource registration events and writes a file containing only the resources that failed during the run.
 
 ### Program mode
 
 - Command: `program import`
 - Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json` when provided without a value), `-v/--verbose`, `--debug`
-- Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, seeds via preview and writes an import file containing only placeholder entries for resources that still need manual IDs.
+- Behavior: Changes into `--program-dir`, forces `skip-create` (no asset helper creation), runs against the selected stack. With `--import-file`, the tool never runs `pulumi preview`; it reuses the file if it already exists, otherwise it seeds an import file skeleton from engine resource registration events and writes a file containing only the resources that failed during the run.
 
 ### Program iterate (capture mode)
 
 - Command: `program iterate`
 - Flags: `--program-dir` (required), `--stack` (repeatable), `--import-file` (optional, defaults to `import.json`), `-v/--verbose`, `--debug`
-- Behavior: Runs against a persistent local file backend at `.pulumi/import-state.json` (relative to your invocation dir), forces `skip-create`, seeds the import file with `pulumi preview --import-file`, and always writes the enriched import file (partial on failure). Use this for iterative capture without touching your real stack; the local backend is kept for reuse between runs.
+- Behavior: Runs against a persistent local file backend at `.pulumi/import-state.json` (relative to your invocation dir), forces `skip-create`, and always writes the enriched import file (partial on failure). The file is seeded from engine resource registration events (and merged with an existing `import.json` if present), so no `pulumi preview` is required. Use this for iterative capture without touching your real stack; the local backend is kept for reuse between runs.
 
 ### Bulk import files
 
 `--import-file` is supported in all commands. Pass `--import-file` with no value to write `import.json`, or supply a path to choose a filename. `program iterate` also defaults to `import.json` when the flag is omitted entirely.
-- `runtime` and `program import` run preview + up against the selected stack, then write an import file that only includes resources still using `<PLACEHOLDER>` IDs (failed/unsupported imports).
-- `program iterate` runs preview + up against the local backend and writes the full enriched import spec (partial on failure) for iterative capture.
+- `runtime` and `program import` run `pulumi up` against the selected stack, then write an import file that only includes resources that failed during the run.
+- `program iterate` runs `pulumi up` against the local backend and writes the full enriched import spec (partial on failure) for iterative capture.
 
 The output includes:
 
-- `nameTable` entries for every Pulumi resource, which lets `pulumi import --file` wire parents and providers correctly.
-- Full AWS resource metadata (type, logical name, provider reference, component bit, provider version).
+- Full AWS resource metadata (type, logical name, component bit, provider version).
 - Any property subsets captured during provider interception (useful for codegen hints).
 
-For capture/iterate flows, the resulting `import.json` contains every CloudFormation resource Pulumi can map, with IDs populated wherever possible. When using `runtime` or `program import` with `--import-file`, the written file is trimmed down to only the resources that still have `<PLACEHOLDER>` IDs so you can fill them in manually before running `pulumi import --file import.json`. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
+For capture/iterate flows, the resulting `import.json` contains every resource observed during the run, with IDs populated wherever possible. When using `runtime` or `program import` with `--import-file`, the written file is trimmed down to only the resources that failed so you can fill them in (or adjust the program) and retry import. The importer also skips CDK metadata, nested stacks, and `Custom::*` resources, logging a summary so you can decide whether to handle them separately.
 
 #### Partial import files and iterative workflows
 
@@ -81,7 +80,7 @@ To build up your import file incrementally across multiple runs, use `program it
 
 - `--skip-create`: Suppresses the creation of the special CDK asset helper resources (buckets, ECR repos, IAM policy glue). This is enforced for `program import` and `program iterate`, and can be enabled manually in `runtime` if you want to avoid creating those helpers.
 - Local backend: `program iterate` always uses and retains a local backend rooted at `.pulumi/import-state.json`; delete that directory if you want a fresh capture.
-- When an import file is requested, the tool first runs `pulumi preview --import-file <path>` in the program directory to generate a placeholder skeleton, then enriches it with captured/state data. The `--import-file` paths are resolved relative to your invocation directory unless absolute.
+- When an import file is requested, the tool reuses the existing file (if present) as an input skeleton, otherwise it seeds a skeleton from engine resource registration events, then enriches it with captured/state data. The `--import-file` paths are resolved relative to your invocation directory unless absolute.
 
 ### Unsupported Resources
 

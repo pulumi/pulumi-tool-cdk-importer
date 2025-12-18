@@ -7,11 +7,12 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/events"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 )
 
 type upEventTracker struct {
 	totalRegistered int
-	registeredURNs  map[string]struct{}
+	registeredURNs  map[string]registeredResource
 
 	createSucceeded int
 	createFailed    int
@@ -19,12 +20,24 @@ type upEventTracker struct {
 	diagnostics   map[string][]string
 	generalErrors []string
 	failures      []string
+
+	failureKeys map[string]struct{}
+}
+
+type registeredResource struct {
+	URN         string
+	Type        string
+	Name        string
+	ParentURN   string
+	ProviderURN string
+	Custom      bool
 }
 
 func newUpEventTracker() *upEventTracker {
 	return &upEventTracker{
-		registeredURNs: make(map[string]struct{}),
+		registeredURNs: make(map[string]registeredResource),
 		diagnostics:    make(map[string][]string),
+		failureKeys:    make(map[string]struct{}),
 	}
 }
 
@@ -44,7 +57,26 @@ func (t *upEventTracker) handle(event events.EngineEvent) {
 		if urn == "" {
 			t.totalRegistered++
 		} else if _, ok := t.registeredURNs[urn]; !ok {
-			t.registeredURNs[urn] = struct{}{}
+			parsed, err := resource.ParseURN(urn)
+			if err == nil {
+				reg := registeredResource{
+					URN:  urn,
+					Type: string(parsed.Type()),
+					Name: parsed.Name(),
+					// Assume custom unless the engine tells us otherwise.
+					Custom: true,
+				}
+				if pre.Metadata.New != nil {
+					reg.ParentURN = pre.Metadata.New.Parent
+					reg.ProviderURN = pre.Metadata.Provider
+					reg.Custom = pre.Metadata.New.Custom
+				} else {
+					reg.ProviderURN = pre.Metadata.Provider
+				}
+				t.registeredURNs[urn] = reg
+			} else {
+				t.registeredURNs[urn] = registeredResource{URN: urn}
+			}
 			t.totalRegistered++
 		}
 		return
@@ -59,6 +91,9 @@ func (t *upEventTracker) handle(event events.EngineEvent) {
 		if isCreateLike(failed.Metadata.Op) {
 			t.createFailed++
 			urn := failed.Metadata.URN
+			if key := failureKeyFromURN(urn); key != "" {
+				t.failureKeys[key] = struct{}{}
+			}
 			msg, urnSpecific := t.takeDiagnostic(urn)
 			if urnSpecific && urn != "" && msg != "" {
 				t.failures = append(t.failures, fmt.Sprintf("%s: %s", urn, msg))
@@ -144,6 +179,47 @@ func (t *upEventTracker) failedCreates() int {
 
 func (t *upEventTracker) totalResources() int {
 	return t.totalRegistered
+}
+
+func (t *upEventTracker) registrations() []registeredResource {
+	if t == nil {
+		return nil
+	}
+	out := make([]registeredResource, 0, len(t.registeredURNs))
+	for _, reg := range t.registeredURNs {
+		out = append(out, reg)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type == out[j].Type {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Type < out[j].Type
+	})
+	return out
+}
+
+func (t *upEventTracker) failureKeySet() map[string]struct{} {
+	if t == nil || len(t.failureKeys) == 0 {
+		return map[string]struct{}{}
+	}
+	out := make(map[string]struct{}, len(t.failureKeys))
+	for k := range t.failureKeys {
+		out[k] = struct{}{}
+	}
+	return out
+}
+
+func failureKeyFromURN(urn string) string {
+	parsed, err := resource.ParseURN(urn)
+	if err != nil {
+		return ""
+	}
+	typ := string(parsed.Type())
+	name := parsed.Name()
+	if typ == "" || name == "" {
+		return ""
+	}
+	return typ + "|" + name
 }
 
 func isCreateLike(op apitype.OpType) bool {

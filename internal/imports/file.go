@@ -1,6 +1,7 @@
 package imports
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,11 @@ import (
 )
 
 const placeholderID = "<PLACEHOLDER>"
+
+// PlaceholderID returns the sentinel value used for unresolved import IDs.
+func PlaceholderID() string {
+	return placeholderID
+}
 
 // File models the structure expected by `pulumi import --file`.
 type File struct {
@@ -145,11 +151,14 @@ func WriteFile(path string, file *File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	bytes, err := json.MarshalIndent(file, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(file); err != nil {
 		return err
 	}
-	return os.WriteFile(path, bytes, 0o644)
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 // ReadFile unmarshals an import file from disk.
@@ -225,6 +234,44 @@ func FilterPlaceholderResources(file *File) *File {
 				Provider:    res.Provider,
 			})
 		}
+	}
+
+	return &File{
+		NameTable: file.NameTable,
+		Resources: filtered,
+	}
+}
+
+// FilterResourcesByKeySet returns a copy of the given file containing only resources whose
+// (type, name) identity matches an entry in keepKeys. NameTable is preserved as-is to keep
+// parent/provider references intact.
+//
+// Keys are of the form "<type>|<name>", where name falls back to LogicalName if Name is empty.
+func FilterResourcesByKeySet(file *File, keepKeys map[string]struct{}) *File {
+	if file == nil {
+		return nil
+	}
+	if len(keepKeys) == 0 {
+		return &File{
+			NameTable: file.NameTable,
+			Resources: nil,
+		}
+	}
+
+	filtered := make([]Resource, 0, len(file.Resources))
+	for _, res := range file.Resources {
+		name := res.Name
+		if name == "" {
+			name = res.LogicalName
+		}
+		if res.Type == "" || name == "" {
+			continue
+		}
+		key := res.Type + "|" + name
+		if _, ok := keepKeys[key]; !ok {
+			continue
+		}
+		filtered = append(filtered, res)
 	}
 
 	return &File{

@@ -59,7 +59,6 @@ func buildFileFromCaptures(captures []CaptureMetadata) *File {
 }
 
 func mergeStateAndCaptures(deployment *apitype.DeploymentV3, captures []CaptureMetadata) (*File, error) {
-	nameTable := buildNameTable(deployment.Resources)
 	captureIndex := indexCaptures(captures)
 	providers := collectProviderDetails(deployment.Resources)
 
@@ -72,11 +71,6 @@ func mergeStateAndCaptures(deployment *apitype.DeploymentV3, captures []CaptureM
 		name := res.URN.Name()
 		if name == "" {
 			name = "resource"
-		}
-
-		parentName, err := resolveParentName(res.Parent)
-		if err != nil {
-			return nil, err
 		}
 
 		_, version, err := resolveProvider(res.Provider, providers)
@@ -112,14 +106,12 @@ func mergeStateAndCaptures(deployment *apitype.DeploymentV3, captures []CaptureM
 			Properties:  props,
 			Component:   !res.Custom,
 			Version:     version,
-			Parent:      parentName,
 		})
 	}
 
 	sortResources(resources)
 
 	return &File{
-		NameTable: nameTable,
 		Resources: resources,
 	}, nil
 }
