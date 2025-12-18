@@ -37,7 +37,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optremove"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optup"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/apitype"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 )
 
 const (
@@ -542,14 +541,6 @@ func buildSkeletonFromRegistrations(regs []registeredResource) *imports.File {
 	return &imports.File{
 		Resources: resources,
 	}
-}
-
-func parseURNName(urnStr string) string {
-	urn, err := resource.ParseURN(urnStr)
-	if err != nil {
-		return ""
-	}
-	return urn.Name()
 }
 
 func isAWSResourceType(typ string) bool {

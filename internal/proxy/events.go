@@ -25,12 +25,10 @@ type upEventTracker struct {
 }
 
 type registeredResource struct {
-	URN         string
-	Type        string
-	Name        string
-	ParentURN   string
-	ProviderURN string
-	Custom      bool
+	URN    string
+	Type   string
+	Name   string
+	Custom bool
 }
 
 func newUpEventTracker() *upEventTracker {
@@ -67,11 +65,7 @@ func (t *upEventTracker) handle(event events.EngineEvent) {
 					Custom: true,
 				}
 				if pre.Metadata.New != nil {
-					reg.ParentURN = pre.Metadata.New.Parent
-					reg.ProviderURN = pre.Metadata.Provider
 					reg.Custom = pre.Metadata.New.Custom
-				} else {
-					reg.ProviderURN = pre.Metadata.Provider
 				}
 				t.registeredURNs[urn] = reg
 			} else {
