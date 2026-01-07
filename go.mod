@@ -21,7 +21,7 @@ require (
 
 require (
 	github.com/aws/smithy-go v1.24.0
-	github.com/pulumi/pulumi/sdk/v3 v3.214.1
+	github.com/pulumi/pulumi/sdk/v3 v3.215.0
 	github.com/spf13/cobra v1.10.2
 )
 
@@ -117,7 +117,7 @@ require (
 	github.com/pulumi/appdash v0.0.0-20231130102222-75f619a67231 // indirect
 	github.com/pulumi/esc v0.21.0 // indirect
 	github.com/pulumi/jsschema v0.0.0-20240222154951-2ba83b66ea54 // indirect
-	github.com/pulumi/pulumi/pkg/v3 v3.214.1 // indirect
+	github.com/pulumi/pulumi/pkg/v3 v3.215.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
