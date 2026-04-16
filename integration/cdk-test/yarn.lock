@@ -2272,10 +2272,10 @@
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
-"@pulumi/aws@7.25.0":
-  version "7.25.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/aws/-/aws-7.25.0.tgz#d831f99e4e5faac496d36b3f3726b50cc1bba818"
-  integrity sha512-qP2ikhFJrw/NrizaOBWiAGkHe003+fPT5Blsc4X1q8uQ0CpmjnPAbbsotpI13hVBU4a2sflIX4GkHcXzRU9QQw==
+"@pulumi/aws@7.26.0":
+  version "7.26.0"
+  resolved "https://registry.yarnpkg.com/@pulumi/aws/-/aws-7.26.0.tgz#d49e293f0a4252999c80175d8ed53495344f260e"
+  integrity sha512-fwxv09yiA9Y6SVVAd+uLnU/jtCbKiUC+4Jh7MvI9Nuq+BCEtikNWMckKaC3vyx9QR2hVU05eTyonf3tzKiKHVQ==
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
     mime "^2.0.0"
