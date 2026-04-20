@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.45.15
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
 	github.com/pkg/errors v0.9.1
-	github.com/pulumi/providertest v0.6.0
+	github.com/pulumi/providertest v0.7.0
 	github.com/pulumi/pulumi-aws-native/provider v1.11.0
 	github.com/pulumi/pulumi-go-provider v0.26.0
 	github.com/stretchr/testify v1.11.1
