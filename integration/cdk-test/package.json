@@ -14,7 +14,7 @@
   "dependencies": {
     "@aws-cdk/app-staging-synthesizer-alpha": "^2.173.1-alpha.0",
     "@pulumi/aws": "7.30.0",
-    "@pulumi/aws-native": "1.66.0",
+    "@pulumi/aws-native": "1.67.0",
     "@pulumi/cdk": "2.0.0",
     "@pulumi/docker-build": "0.0.17",
     "@pulumi/pulumi": "3.243.0",
