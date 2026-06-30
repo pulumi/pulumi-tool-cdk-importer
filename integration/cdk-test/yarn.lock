@@ -2258,10 +2258,10 @@
   resolved "https://registry.npmjs.org/@protobufjs/utf8/-/utf8-1.1.0.tgz"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@pulumi/aws-native@1.70.0":
-  version "1.70.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/aws-native/-/aws-native-1.70.0.tgz#6aba0b8ca2ccb6c78aa7c77e8bec273c17afea9a"
-  integrity sha512-Kkxgz7epR4bFbf/R9Z17zLR63RLxjQi840d/TQL64X8Llr5R+YvyM86vwQeUKaslyGhzaSpdsJ2oBFqq8vTEQg==
+"@pulumi/aws-native@1.70.1":
+  version "1.70.1"
+  resolved "https://registry.yarnpkg.com/@pulumi/aws-native/-/aws-native-1.70.1.tgz#2600eae538c80e9cf2d2e3cb2e36de8e1bb67e6e"
+  integrity sha512-LvGT5qSjV6c+dJx5QSDZbkzrvVfVDFMUnztoBNFdbdiY5tYnGGCz8kzmZ/noYte1zQuGBYvBdcY+Ce71C1FG6w==
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
