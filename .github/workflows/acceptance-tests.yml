@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Fetch secrets from ESC
         id: esc-secrets
-        uses: pulumi/esc-action@197ccaa42ab49560ce838a3010eb8345ce086896 # v1
+        uses: pulumi/esc-action@3af4859af8a73a362fb599b944124097d4bb80c5 # v3
       - name: Checkout Repo
         uses: actions/checkout@v4
       - name: Configure AWS Credentials
