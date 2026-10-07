@@ -282,8 +282,8 @@ github.com/pulumi/providertest v0.7.0 h1:nXydemrnkJfil6sd8AtvO81gJOTzYc1wFfgtco4
 github.com/pulumi/providertest v0.7.0/go.mod h1:R7nigJF1sE3yUtNQSozNSfsUl/gK4xIDW0Mxmacl6IY=
 github.com/pulumi/pulumi-aws-native/provider v1.11.0 h1:fTgXDF0XTe2U1AKcATLOkpRj6tiLDTUZmkGRCz6ED3w=
 github.com/pulumi/pulumi-aws-native/provider v1.11.0/go.mod h1:B7P7NDrFuvKxNjt+gP+p/dmM1D2GVyGIWAKWXnmepdY=
-github.com/pulumi/pulumi-cloud-sdk/go v1.20261007.0 h1:6KRhL1upSqLbLji3A8NBgCKm0oGxPL1uOJILSeffH1c=
-github.com/pulumi/pulumi-cloud-sdk/go v1.20261007.0/go.mod h1:NPA79X6Wmyr5zNKd+N+RiVJN8duwIrRmIaed8HCL9EM=
+github.com/pulumi/pulumi-cloud-sdk/go v1.20261007.1312 h1:1+Ukltcn38qb3AJuNP2KpSolgMVe1fyYwiXYxc8Lrbo=
+github.com/pulumi/pulumi-cloud-sdk/go v1.20261007.1312/go.mod h1:NPA79X6Wmyr5zNKd+N+RiVJN8duwIrRmIaed8HCL9EM=
 github.com/pulumi/pulumi-go-provider v0.26.0 h1:3ia10+irvv7qPph2NZ2YwUGI/KCf6li8Frlc1luv7D4=
 github.com/pulumi/pulumi-go-provider v0.26.0/go.mod h1:zJiGxY5xnodPzLulpRS+fsS960MzeCdlsdiVCZ5TMRA=
 github.com/pulumi/pulumi/pkg/v3 v3.268.0 h1:8l5w5cMakmndyGuiJ4zvtqwAN3bikfNq86vwtQSNkYE=
