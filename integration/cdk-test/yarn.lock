@@ -2273,10 +2273,10 @@
     fast-deep-equal "^3.1.3"
     fs-extra "^11.2.0"
 
-"@pulumi/docker-build@0.0.22":
-  version "0.0.22"
-  resolved "https://registry.yarnpkg.com/@pulumi/docker-build/-/docker-build-0.0.22.tgz#cab00bfa2c738fddfe4e6565506df00ab9da839b"
-  integrity sha512-DcnwoDv7kBM6MBhuEfkiATDwKDqGCNPICxUt7gbYSdpb/UuT+6K7pNMQu7mCNZV7feqZh9EJ3P20UXCq1R+YQg==
+"@pulumi/docker-build@0.0.23":
+  version "0.0.23"
+  resolved "https://registry.yarnpkg.com/@pulumi/docker-build/-/docker-build-0.0.23.tgz#a788565b4c20728bbe62ebd15a9292546d744eb0"
+  integrity sha512-ggnIlbBvDst1LSTfsAvg7ZoJrZphm9pxCW2+L5c2qCSLg7ZcYcAP4iHaUfFonHhXp3dK2yNHDwFCCw8x+/xy6Q==
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
