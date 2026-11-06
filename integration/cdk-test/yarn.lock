@@ -2087,12 +2087,12 @@
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
-"@pulumi/aws@7.53.0":
-  version "7.53.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/aws/-/aws-7.53.0.tgz#9006254f388d0f9a3a6efe149c159a1f09a3c395"
-  integrity sha512-qHijd0MQTZhGb3Z1WJzmrqfK8Vxz3WkyUkfTXm/7nWTmyWAdLgshyDwzbHxyGEsPbEVjLpgx+3mjPmY9HIGLrw==
+"@pulumi/aws@7.54.0":
+  version "7.54.0"
+  resolved "https://registry.yarnpkg.com/@pulumi/aws/-/aws-7.54.0.tgz#468d97656a02bac7e181628286c45b77cd082c7b"
+  integrity sha512-0asX0tYqnQFztv8k3kylli5ejXXXdttY0aVlVJ5CznEhecnQmE9Nt/XZjs/+4z5MXR7OYIdtomwwjPMt1+J8mw==
   dependencies:
-    "@pulumi/pulumi" "^3.142.0"
+    "@pulumi/pulumi" "^3.269.0"
     mime "^2.0.0"
 
 "@pulumi/cdk@2.0.0":
@@ -2114,7 +2114,7 @@
   dependencies:
     "@pulumi/pulumi" "^3.142.0"
 
-"@pulumi/pulumi@3.274.1", "@pulumi/pulumi@^3.142.0":
+"@pulumi/pulumi@3.274.1", "@pulumi/pulumi@^3.142.0", "@pulumi/pulumi@^3.269.0":
   version "3.274.1"
   resolved "https://registry.yarnpkg.com/@pulumi/pulumi/-/pulumi-3.274.1.tgz#6db4a64edae0df534b687410b3b7fd7b3abc7f5e"
   integrity sha512-L9WHM4W7y9BmGwTZ0n5yUEVo7zhb6BXocNFPv3VtwEH3DZUzJ6N+VTiLvo1HbSMnZJJVS0jFL4zMmOm80Lbzeg==
