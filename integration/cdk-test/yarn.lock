@@ -2080,12 +2080,12 @@
   resolved "https://registry.npmjs.org/@protobufjs/utf8/-/utf8-1.1.0.tgz"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@pulumi/aws-native@1.85.0":
-  version "1.85.0"
-  resolved "https://registry.yarnpkg.com/@pulumi/aws-native/-/aws-native-1.85.0.tgz#4abff71c8c92724998425b07c2675961a26fd4de"
-  integrity sha512-rixWWCEUAk04S2h6hIl8fu2uBsbThvj4qNdRQpjxFZZl4fEcCDTFoyjUQpQ+jAvXNLKMrBYE4R7Ajq0dHzCrBQ==
+"@pulumi/aws-native@1.86.0":
+  version "1.86.0"
+  resolved "https://registry.yarnpkg.com/@pulumi/aws-native/-/aws-native-1.86.0.tgz#7f8c1b630ba5757acb74c1e537e5ad69186a7872"
+  integrity sha512-nAB2mOEmT/Lmzpg0b3yOAjD+aEOOALl3aAIejKN3o9HfQDASTDdpUpMVgUL9ZXgBEavRdhkMgORs6m2vZ9Z3Gg==
   dependencies:
-    "@pulumi/pulumi" "^3.142.0"
+    "@pulumi/pulumi" "^3.269.0"
 
 "@pulumi/aws@7.55.0":
   version "7.55.0"
